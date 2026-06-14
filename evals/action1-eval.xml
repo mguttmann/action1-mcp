@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Skill-format evaluation suite for action1-mcp-server.
+
+  Format follows the official Anthropic mcp-builder skill (see
+  https://github.com/anthropics/skills/blob/main/skills/mcp-builder/reference/evaluation.md):
+
+      <evaluation>
+        <qa_pair>
+          <question>...</question>
+          <answer>...</answer>
+        </qa_pair>
+        ...
+      </evaluation>
+
+  Answers are designed to be VERIFIABLE via direct string comparison against
+  STABLE Action1 platform facts. Every question is answerable using ONLY the
+  MCP server's tools (no source-code reading required) — that's the skill's
+  hard rule "agents have access ONLY to the MCP servers". Every answer is a
+  literal string, integer, or comma-separated list that won't change as
+  endpoints are onboarded / decommissioned in any particular org.
+
+  Run with:
+
+      python scripts/evaluation.py \
+        -t stdio -c node -a dist/index.js \
+        -e ACTION1_BASE_URL=https://app.eu.action1.com/api/3.0 \
+        -e ACTION1_ORG_ID=... \
+        -e ACTION1_CLIENT_ID=... \
+        -e ACTION1_CLIENT_SECRET=... \
+        -o eval-report.md \
+        evals/action1-eval.xml
+-->
+<evaluation>
+  <qa_pair>
+    <question>Inspect the catalog of Action1 action templates and identify the one whose required parameters include a field that controls which exit codes count as success on Windows. Provide the template id verbatim.</question>
+    <answer>run_powershell</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>The Action1 platform exposes a dedicated action template for executing arbitrary shell scripts on macOS endpoints, separate from the Windows PowerShell template. What is its template id?</question>
+    <answer>run_script</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Look up the run_script action template via the MCP server. Among its parameters, which one accepts the literal string "Bash" as one of its allowed values? Provide the parameter name verbatim.</question>
+    <answer>run_script_language</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Look up the run_script action template via the MCP server. Among its parameters, the `platform` parameter takes a literal string value for macOS endpoints. What is that value (case-sensitive)?</question>
+    <answer>Mac</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Among Action1's built-in action templates, identify the one whose template id is used for rebooting endpoints. Provide the literal template id.</question>
+    <answer>reboot</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>The MCP server's `action1_get_endpoint` tool returns a `platform` field whose value is one of a fixed set of strings. Provide the four possible values comma-separated, lowercase, alphabetically sorted (no spaces between commas).</question>
+    <answer>linux,macos,unknown,windows</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>The MCP server's `action1_get_automation_output` tool filters status-marker lines out of the raw script output it receives from Action1. Three specific status keywords identify these lines. Provide them comma-separated, alphabetically sorted (no spaces).</question>
+    <answer>Completed,Starting,Waiting</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use the `action1_get_action_template` tool to inspect the `deploy_update` template. Within its `reboot_options` parameter group, the `auto_reboot` value can be set to one of three literal strings. Provide them comma-separated, alphabetically sorted (no spaces).</question>
+    <answer>if_required,no,yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Inspect the run_powershell template's `success_exit_codes` parameter. The MCP server's curated wrapper defaults this parameter to a single-character literal string when the caller omits it. Provide that literal value.</question>
+    <answer>0</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use action1_list_action_templates and identify the action template that allows uninstalling software on an endpoint. Provide its template id verbatim.</question>
+    <answer>uninstall_program</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>The MCP server exposes a tool that removes a single endpoint from an endpoint group (the counterpart to adding one). Provide its tool name verbatim.</question>
+    <answer>action1_remove_endpoint_from_group</answer>
+  </qa_pair>
+</evaluation>

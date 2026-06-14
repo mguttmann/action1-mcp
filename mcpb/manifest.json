@@ -1,0 +1,83 @@
+{
+  "manifest_version": "0.2",
+  "name": "action1-mcp-server",
+  "display_name": "Action1 RMM",
+  "version": "0.5.0",
+  "description": "Drive your Action1 RMM fleet from Claude. 100% Action1 API coverage with safe defaults: every destructive call defaults to a dry-run preview and requires explicit confirmation.",
+  "long_description": "Hybrid MCP server that wraps the Action1 RMM REST API: 33 hand-curated tools for the common workflows (run PowerShell on Windows, Bash on macOS, deploy updates, reboot endpoints, watch automations to completion) including 6 high-level workflow wrappers (CVE remediation plan, audit log search, software inventory, etc.), plus 133 auto-generated verb-first tools that mirror every operation in the official Action1 OpenAPI spec — 166 tools total. Uses OAuth2 client credentials, automatic token refresh, retry-with-backoff for transient errors (including network resets), and a three-layer destructive guard (env switch + per-call confirm + dry-run-by-default) so the LLM cannot accidentally mutate production state.",
+  "author": {
+    "name": "mguttmann"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/mguttmann/action1-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mguttmann/action1-mcp"
+  },
+  "documentation": "https://github.com/mguttmann/action1-mcp/blob/main/README.md",
+  "support": "https://github.com/mguttmann/action1-mcp/issues",
+  "keywords": [
+    "rmm",
+    "action1",
+    "patch-management",
+    "endpoints",
+    "powershell",
+    "bash"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {
+        "ACTION1_BASE_URL": "${user_config.action1_base_url}",
+        "ACTION1_ORG_ID": "${user_config.action1_org_id}",
+        "ACTION1_CLIENT_ID": "${user_config.action1_client_id}",
+        "ACTION1_CLIENT_SECRET": "${user_config.action1_client_secret}",
+        "ACTION1_ALLOW_DESTRUCTIVE": "${user_config.allow_destructive}"
+      }
+    }
+  },
+  "user_config": {
+    "action1_base_url": {
+      "type": "string",
+      "title": "Action1 API base URL",
+      "description": "Region-specific endpoint, e.g. https://app.eu.action1.com/api/3.0 or https://app.action1.com/api/3.0 (US).",
+      "required": true,
+      "default": "https://app.eu.action1.com/api/3.0"
+    },
+    "action1_org_id": {
+      "type": "string",
+      "title": "Default organization ID",
+      "description": "UUID of the Action1 organization. Each tool can override via org_id.",
+      "required": true,
+      "sensitive": false
+    },
+    "action1_client_id": {
+      "type": "string",
+      "title": "API client ID",
+      "description": "Issued in Action1 console → Settings → API Credentials. Looks like api-key-...@action1.com.",
+      "required": true,
+      "sensitive": true
+    },
+    "action1_client_secret": {
+      "type": "string",
+      "title": "API client secret",
+      "description": "Shown once when the credential is issued. Store securely.",
+      "required": true,
+      "sensitive": true
+    },
+    "allow_destructive": {
+      "type": "string",
+      "title": "Allow destructive operations",
+      "description": "Set to 'true' to permit destructive tools (run scripts, deploy updates, reboot, uninstall) to actually execute. Even when true, every call still requires per-call confirm:\"YES\" and dry_run:false. Default 'false' for query-only safety.",
+      "required": false,
+      "default": "false"
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": false
+}

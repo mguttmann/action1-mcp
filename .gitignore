@@ -1,0 +1,39 @@
+node_modules/
+dist/
+build/
+coverage/
+
+.env
+.env.local
+.env.*.local
+# Keep the committed template tracked even if a broader .env.* rule is added later
+!.env.example
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+.tsbuildinfo
+*.tsbuildinfo
+
+# MCPB bundle staging area (ts → js output for the bundle)
+mcpb/server/
+
+# Claude Code session cache
+.claude/
+
+# Tool metadata
+.omo/
+.sisyphus/
+# CEO memory directory (also self-protected by .remember/.gitignore; listed here as defense-in-depth)
+.remember/
