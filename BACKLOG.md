@@ -72,7 +72,6 @@ open and why.
 ## CI, release and supply chain
 
 - Windows CI (built, not yet run): the `cross-os` job builds the bundle with Git Bash and starts it on `windows-latest`; it has only run on macOS so far. The first CI run on GitHub shows whether a path or tool trips on Windows.
-- Snapshot child environment on Windows: `scripts/tools-list-snapshot.mjs` starts the server with only `PATH` and the `ACTION1_*` variables, so on Windows the child gets no `SystemRoot`, `TEMP` or `USERPROFILE`. `initialize` and `tools/list` need no network, so it probably works; if the `cross-os` job fails on Windows, these variables are the first suspect.
 - Spec fetch: `scripts/fetch-spec.mjs` evaluates the literal extracted from Action1's Swagger UI with `node:vm`, which is no sandbox.
 - Release signing and concurrency: the `.mcpb` is not signed with `mcpb sign`, and `release.yml` has no concurrency group.
 - Release notes: GitHub releases use `--generate-notes` instead of the CHANGELOG section, and nothing checks that the section exists for the tag.

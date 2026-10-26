@@ -33,6 +33,12 @@ const child = spawn(process.execPath, [entry], {
   stdio: ["pipe", "pipe", "pipe"],
   env: {
     PATH: process.env.PATH ?? "",
+    // Windows processes need these to start reliably; harmless elsewhere.
+    ...Object.fromEntries(
+      ["SystemRoot", "TEMP", "TMP", "USERPROFILE", "HOME"]
+        .filter((k) => process.env[k] !== undefined)
+        .map((k) => [k, process.env[k]]),
+    ),
     ACTION1_BASE_URL: "https://127.0.0.1:1/api/3.0",
     ACTION1_CLIENT_ID: "dummy-client-id",
     ACTION1_CLIENT_SECRET: "dummy-client-secret",

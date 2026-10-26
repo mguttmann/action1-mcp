@@ -44,10 +44,17 @@ if (pkg.devDependencies) {
   console.error(`error: ${dir}/package.json still lists devDependencies.`);
   process.exit(2);
 }
-const raw = execFileSync("npm", ["sbom", "--sbom-format", "cyclonedx", "--sbom-type", type], {
-  cwd: dir,
-  encoding: "utf8",
-});
+// Run npm through the current node binary when npm started us (npm_execpath
+// points at npm-cli.js); a bare "npm" cannot be spawned on Windows without a shell.
+const sbomArgs = ["sbom", "--sbom-format", "cyclonedx", "--sbom-type", type];
+const npmCli = process.env.npm_execpath;
+const raw = npmCli
+  ? execFileSync(process.execPath, [npmCli, ...sbomArgs], { cwd: dir, encoding: "utf8" })
+  : execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", sbomArgs, {
+      cwd: dir,
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    });
 
 const sbom = JSON.parse(raw);
 if (sbom.bomFormat !== "CycloneDX" || !Array.isArray(sbom.components)) {
