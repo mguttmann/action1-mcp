@@ -180,6 +180,23 @@ A listed version can be marked deprecated or deleted with
 `mcp-publisher status` after a `mcp-publisher login github`; it cannot
 be replaced.
 
+## 7. Glama
+
+Glama lists the repository at
+`https://glama.ai/mcp/servers/<owner>/action1-mcp` on its own. The
+`glama.json` in the repository root names the GitHub users who may
+maintain that listing (`maintainers`); Glama reads it only during its
+"Claim" flow, so after a change to the file the maintainer runs the
+claim again. Signed in on glama.ai with GitHub as a listed maintainer,
+claim the listing on its page.
+
+Glama's tool inspection runs the server in a container built from a
+form in the listing's admin area (Node.js version, build steps, start
+command, an environment JSON schema and placeholder values), not from a
+file in the repository. The server answers `tools/list` without calling
+the Action1 API, so placeholder values are enough; never enter a real
+API credential there.
+
 ## Check the result
 
 ```bash

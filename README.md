@@ -118,6 +118,9 @@ directories that read the registry can install it from there. Only that
 name is this project; Action1 servers under other namespaces are
 different code.
 
+`glama.json` names the maintainer of the
+[Glama listing](https://glama.ai/mcp/servers/mguttmann/action1-mcp).
+
 ### From source (any MCP host)
 
 Requires Node.js 22.12 or newer (`engines` in `package.json`); CI tests

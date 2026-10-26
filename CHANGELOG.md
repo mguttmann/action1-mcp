@@ -19,6 +19,8 @@ first in each release.
   version and hash from the release's `SHA256SUMS`, checks the asset
   against them, skips a version the registry already lists and runs a
   `mcp-publisher` pinned by version and SHA-256.
+- **Glama listing.** `glama.json` names `mguttmann` as maintainer, so
+  the owner can claim the listing on glama.ai.
 
 ## [0.6.0] - 2026-10-26
 

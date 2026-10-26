@@ -281,3 +281,11 @@ describe("pinned tools", () => {
     expect(unpinned).toEqual([]);
   });
 });
+
+describe("Glama listing (glama.json)", () => {
+  it("names mguttmann as maintainer under Glama's server schema", () => {
+    const glama = JSON.parse(read("glama.json")) as { $schema: string; maintainers: string[] };
+    expect(glama.$schema).toBe("https://glama.ai/mcp/schemas/server.json");
+    expect(glama.maintainers).toEqual(["mguttmann"]);
+  });
+});
