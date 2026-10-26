@@ -87,8 +87,8 @@ Settings > Actions > General:
 
 - **Workflow permissions**: *Read repository contents and packages
   permissions*. Every workflow declares its own minimal `permissions`;
-  only the `github-release` and `npm-publish` jobs of `release.yml` ask
-  for more.
+  only the `github-release`, `mcp-registry` and `npm-publish` jobs of
+  `release.yml` ask for more.
 - **Allow GitHub Actions to create and approve pull requests**: off.
 - **Actions permissions**: allow actions created by GitHub (all actions
   in use are `actions/*`, pinned by commit SHA).
@@ -152,6 +152,32 @@ Prerequisites, in this order:
    release tag on, the job publishes with provenance through OIDC.
    Optionally, in the package settings, disallow token-based publishing
    afterwards so only the workflow can publish.
+
+## 6. MCP Registry
+
+`server.json` describes the server for the official MCP Registry
+(`registry.modelcontextprotocol.io`) as `io.github.<owner>/action1-mcp`.
+The `mcp-registry` job of `release.yml` (stable tags only, after the
+GitHub release) runs `.github/workflows/mcp-registry.yml`, which can
+also be started by hand for an existing tag (Actions > MCP Registry >
+Run workflow, input `tag`). No repository setting and no secret is
+needed:
+
+- Authentication is GitHub OIDC (`id-token: write`); the registry grants
+  the namespace `io.github.<repository owner>/*`.
+- The workflow takes version, download URL and `fileSha256` from the
+  release (tag and `SHA256SUMS`) and checks the asset against
+  `SHA256SUMS`; a version the registry already lists is skipped, because
+  registry versions are permanent.
+- The MCPB asset must stay publicly downloadable: the registry checks
+  the URL (GitHub release asset, `mcp` in the URL) when publishing.
+- `mcp-publisher` is pinned by version and SHA-256 in the workflow
+  (`MCP_PUBLISHER_VERSION`, `MCP_PUBLISHER_SHA256`, value from the
+  registry release's `registry_<version>_checksums.txt`).
+
+A listed version can be marked deprecated or deleted with
+`mcp-publisher status` after a `mcp-publisher login github`; it cannot
+be replaced.
 
 ## Check the result
 

@@ -10,7 +10,9 @@ name: Release
 #   github-release  build provenance attestation (public repository) and
 #                   a new GitHub release; an existing release is never
 #                   overwritten
-#   npm-publish     publishes the tarball from the build job; stays off
+#   mcp-registry    lists the release's .mcpb in the official MCP Registry
+#                   (mcp-registry.yml, GitHub OIDC); stable versions only
+#   npm-publish    publishes the tarball from the build job; stays off
 #                   until the repository variable NPM_PUBLISH_ENABLED is
 #                   'true' and npm trusted publishing (OIDC) is configured
 #                   for this repository and workflow on npmjs.com
@@ -142,6 +144,18 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
           gh release create "$TAG" release/*.mcpb release/*.tgz release/*.cdx.json \
             release/SHA256SUMS --verify-tag --title "$TAG" --generate-notes "${flags[@]}"
+
+  mcp-registry:
+    needs: [verify, github-release]
+    # Registry versions are permanent and the newest one is listed as
+    # latest, so prereleases stay out.
+    if: ${{ needs.verify.outputs.prerelease != 'true' }}
+    uses: ./.github/workflows/mcp-registry.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      tag: ${{ github.ref_name }}
 
   npm-publish:
     needs: [verify, build, github-release]

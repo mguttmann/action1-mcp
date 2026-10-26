@@ -8,7 +8,17 @@ first in each release.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **MCP Registry listing.** `server.json` describes the server for the
+  official MCP Registry as `io.github.mguttmann/action1-mcp`, with the
+  MCPB release asset (download URL and SHA-256) as its package. The new
+  workflow `mcp-registry.yml` publishes it through GitHub OIDC; the
+  release workflow calls it for every stable tag after the GitHub
+  release, and it can be started by hand for an existing tag. It takes
+  version and hash from the release's `SHA256SUMS`, checks the asset
+  against them, skips a version the registry already lists and runs a
+  `mcp-publisher` pinned by version and SHA-256.
 
 ## [0.6.0] - 2026-10-26
 

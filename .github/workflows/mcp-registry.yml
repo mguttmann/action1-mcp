@@ -1,0 +1,133 @@
+name: MCP Registry
+
+# Publishes server.json to the official MCP Registry
+# (registry.modelcontextprotocol.io) as io.github.<owner>/action1-mcp.
+#
+#   workflow_call      from release.yml, after the GitHub release exists
+#                      (stable versions only); the checkout is the tag
+#                      commit
+#   workflow_dispatch  by hand for an existing release tag, e.g. to list a
+#                      release made before this workflow existed or to
+#                      retry a failed publish; the checkout is the branch
+#                      the run is started from (main)
+#
+# The package is the release's .mcpb asset. Version, download URL and
+# fileSha256 are taken from the release itself (tag and SHA256SUMS), and
+# the asset's bytes are checked against SHA256SUMS before publishing. A
+# registry version is permanent: when the version is already listed, the
+# run ends without publishing.
+#
+# Authentication is GitHub OIDC (no secret): the registry grants the
+# io.github.<repository owner>/* namespace. mcp-publisher comes from the
+# registry's GitHub release, pinned by version and SHA-256 (asset
+# mcp-publisher_linux_amd64.tar.gz, value from that release's
+# registry_<version>_checksums.txt). To upgrade, change both together.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to list, e.g. v1.2.3
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to list, e.g. v1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-registry-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      MCP_PUBLISHER_VERSION: v1.8.5
+      MCP_PUBLISHER_SHA256: 2d151ac57275c9a6684d9d22b1cba81058bab195ea0a162e8fce3c6a5ec32812
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Point server.json at the release asset
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $TAG is not a stable release tag (vMAJOR.MINOR.PATCH)."
+            exit 1
+          fi
+          version="${TAG#v}"
+          asset="action1-mcp-${version}.mcpb"
+          mkdir -p asset
+          gh release download "$TAG" --pattern SHA256SUMS --pattern "$asset" --dir asset
+          sha="$(awk -v a="$asset" '$2 == a { print $1 }' asset/SHA256SUMS)"
+          if ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::SHA256SUMS of $TAG has no entry for $asset."
+            exit 1
+          fi
+          (cd asset && echo "$sha  $asset" | sha256sum --check --strict)
+          name="$(jq -r .name server.json)"
+          case "$name" in
+            "io.github.${GITHUB_REPOSITORY_OWNER}/"*) ;;
+            *)
+              echo "::error::server.json name $name is outside io.github.${GITHUB_REPOSITORY_OWNER}/."
+              exit 1
+              ;;
+          esac
+          url="https://github.com/${GH_REPO}/releases/download/${TAG}/${asset}"
+          jq --arg v "$version" --arg url "$url" --arg sha "$sha" '
+            .version = $v
+            | .packages[0].version = $v
+            | .packages[0].identifier = $url
+            | .packages[0].fileSha256 = $sha
+          ' server.json > server.json.tmp
+          mv server.json.tmp server.json
+          cat server.json
+      - name: Skip a version the registry already lists
+        id: listed
+        run: |
+          set -euo pipefail
+          name="$(jq -r '.name | @uri' server.json)"
+          version="$(jq -r '.version | @uri' server.json)"
+          code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            "https://registry.modelcontextprotocol.io/v0.1/servers/${name}/versions/${version}")"
+          case "$code" in
+            200)
+              echo "::notice::$TAG is already listed in the MCP Registry; nothing to publish."
+              echo "listed=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404) echo "listed=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::MCP Registry lookup returned HTTP $code."
+              exit 1
+              ;;
+          esac
+      - name: Install mcp-publisher (pinned version and SHA-256)
+        if: steps.listed.outputs.listed == 'false'
+        run: |
+          set -euo pipefail
+          archive=mcp-publisher_linux_amd64.tar.gz
+          curl --fail --location --silent --show-error --output "$archive" \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${archive}"
+          echo "${MCP_PUBLISHER_SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" mcp-publisher
+          rm -f "$archive"
+          ./mcp-publisher --version
+      - name: Log in with GitHub OIDC
+        if: steps.listed.outputs.listed == 'false'
+        run: ./mcp-publisher login github-oidc
+      - name: Publish
+        if: steps.listed.outputs.listed == 'false'
+        run: ./mcp-publisher publish server.json

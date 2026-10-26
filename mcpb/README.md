@@ -63,7 +63,10 @@ Desktop.
 
 The `release.yml` workflow attaches the `.mcpb`, the npm tarball, a
 CycloneDX SBOM for each and a `SHA256SUMS` file to the GitHub Release of
-every `v*.*.*` tag. Point users there instead of sending files around.
+every `v*.*.*` tag, and for stable tags lists the `.mcpb` with its
+SHA-256 in the official MCP Registry (`mcp-registry.yml`, see
+`docs/maintainers/repo-settings.md`). Point users there instead of
+sending files around.
 Verify a download with `sha256sum --check --ignore-missing SHA256SUMS`
 (on macOS, compare `shasum -a 256 <file>` with its line in
 `SHA256SUMS`). To check that a release bundle was built from the tagged

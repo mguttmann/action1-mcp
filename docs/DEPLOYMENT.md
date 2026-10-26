@@ -213,7 +213,8 @@ install. The bundle contains no Node.js runtime and no credentials.
 
 - The `release.yml` workflow builds the bundle and attaches
   `action1-mcp-<version>.mcpb` to the GitHub Release of every `v*.*.*`
-  tag.
+  tag. For stable tags it also lists that asset in the official MCP
+  Registry as `io.github.mguttmann/action1-mcp` (`mcp-registry.yml`).
 - Users double-click the file; Claude Desktop walks them through the
   settings.
 

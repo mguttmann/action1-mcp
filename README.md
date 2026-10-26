@@ -108,6 +108,16 @@ listed in [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md).
 Claude Desktop runs the bundle with its built-in Node.js. Details and
 troubleshooting: [`docs/INSTALLATION.md`](docs/INSTALLATION.md#claude-desktop-macos--windows).
 
+### MCP Registry
+
+The release workflow lists the bundle of each stable release in the
+official [MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.mguttmann/action1-mcp` (download URL and SHA-256 of the
+release asset, the environment variables of the bundle). MCP hosts and
+directories that read the registry can install it from there. Only that
+name is this project; Action1 servers under other namespaces are
+different code.
+
 ### From source (any MCP host)
 
 Requires Node.js 22.12 or newer (`engines` in `package.json`); CI tests

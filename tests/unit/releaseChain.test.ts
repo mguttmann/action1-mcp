@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 // Release and supply-chain rules that live in workflow files and docs.
@@ -48,6 +48,7 @@ function after(lines: string[], needle: string, from = 0): number {
 
 const ci = read(".github/workflows/ci.yml");
 const release = read(".github/workflows/release.yml");
+const registry = read(".github/workflows/mcp-registry.yml");
 const ciJobs = jobs(ci);
 const releaseJobs = jobs(release);
 
@@ -139,12 +140,92 @@ describe("release.yml", () => {
   });
 });
 
-describe("workflow hygiene", () => {
-  const workflows = {
-    "ci.yml": ci,
-    "release.yml": release,
-    "spec-drift.yml": read(".github/workflows/spec-drift.yml"),
+describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
+  const pkg = JSON.parse(read("package.json")) as { version: string; repository: { url: string } };
+  const server = JSON.parse(read("server.json")) as {
+    $schema: string;
+    name: string;
+    version: string;
+    repository: { url: string; source: string };
+    packages: {
+      registryType: string;
+      identifier: string;
+      version: string;
+      fileSha256: string;
+      transport: { type: string };
+      environmentVariables: { name: string; isSecret?: boolean }[];
+    }[];
   };
+  const manifest = JSON.parse(read("mcpb/manifest.json")) as {
+    server: { mcp_config: { env: Record<string, string> } };
+  };
+
+  it("lists this repository's MCPB release asset under the package.json version", () => {
+    expect(server.$schema).toMatch(
+      /^https:\/\/static\.modelcontextprotocol\.io\/schemas\/\d{4}-\d{2}-\d{2}\/server\.schema\.json$/,
+    );
+    expect(server.name).toBe("io.github.mguttmann/action1-mcp");
+    expect(server.version).toBe(pkg.version);
+    expect(pkg.repository.url).toContain(server.repository.url.replace("https://", ""));
+    expect(server.packages).toHaveLength(1);
+    const [p] = server.packages;
+    expect(p!.registryType).toBe("mcpb");
+    expect(p!.version).toBe(pkg.version);
+    expect(p!.identifier).toBe(
+      `${server.repository.url}/releases/download/v${pkg.version}/action1-mcp-${pkg.version}.mcpb`,
+    );
+    expect(p!.fileSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(p!.transport.type).toBe("stdio");
+  });
+
+  it("declares exactly the environment of the bundle, credentials as secrets", () => {
+    const env = server.packages[0]!.environmentVariables;
+    expect(env.map((e) => e.name).sort()).toEqual(
+      Object.keys(manifest.server.mcp_config.env).sort(),
+    );
+    const secrets = env.filter((e) => e.isSecret).map((e) => e.name);
+    expect(secrets.sort()).toEqual(["ACTION1_CLIENT_ID", "ACTION1_CLIENT_SECRET"]);
+  });
+
+  it("is published by release.yml after the GitHub release, through OIDC", () => {
+    const job = releaseJobs.get("mcp-registry") ?? "";
+    expect(job).toMatch(/needs: \[?[^\n]*\bgithub-release\b/);
+    expect(job).toContain("uses: ./.github/workflows/mcp-registry.yml");
+    expect(job).toContain("id-token: write");
+    expect(registry).toMatch(/^ {2}workflow_call:/m);
+    expect(registry).toMatch(/^ {2}workflow_dispatch:/m);
+  });
+
+  it("runs a pinned, checksum-verified mcp-publisher and takes the asset hash from the release", () => {
+    expect(registry).toMatch(/MCP_PUBLISHER_VERSION: v\d+\.\d+\.\d+\n/);
+    expect(registry).toMatch(/MCP_PUBLISHER_SHA256: [0-9a-f]{64}\n/);
+    const run = [...jobs(registry).values()].flatMap(runLines);
+    expect(run.join("\n")).not.toMatch(/releases\/latest|\|\s*(ba)?sh\b/);
+    const check = run.findIndex(
+      (l) => l.includes("${MCP_PUBLISHER_SHA256}") && l.includes("sha256sum --check"),
+    );
+    const extract = after(run, "tar -xzf");
+    expect(check).toBeGreaterThanOrEqual(0);
+    expect(extract).toBeGreaterThan(check);
+    expect(after(run, "SHA256SUMS")).toBeGreaterThanOrEqual(0);
+    expect(after(run, "./mcp-publisher login github-oidc", extract)).toBeGreaterThan(extract);
+    expect(after(run, "./mcp-publisher publish", extract)).toBeGreaterThan(extract);
+  });
+});
+
+describe("workflow hygiene", () => {
+  const dir = ".github/workflows/";
+  const workflows = Object.fromEntries(
+    readdirSync(new URL(dir, root))
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => [f, read(dir + f)]),
+  );
+
+  it("covers every workflow file", () => {
+    expect(Object.keys(workflows)).toEqual(
+      expect.arrayContaining(["ci.yml", "release.yml", "spec-drift.yml", "mcp-registry.yml"]),
+    );
+  });
 
   it("every job that runs steps has a timeout", () => {
     const missing: string[] = [];

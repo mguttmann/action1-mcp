@@ -230,9 +230,13 @@ commands and the Caddy snippet are in
 Releases are cut by the maintainer:
 
 1. `npm version X.Y.Z --no-git-tag-version` (updates `package.json` and
-   `package-lock.json`) and the same version in `mcpb/manifest.json`.
-   The server reads its version from `package.json`;
-   `tests/unit/serverContract.test.ts` fails if the manifest differs.
+   `package-lock.json`) and the same version in `mcpb/manifest.json` and
+   `server.json` (`version`, `packages[0].version` and the version in
+   `packages[0].identifier`; the `mcp-registry` workflow sets
+   `fileSha256` from the release). The server reads its version from
+   `package.json`; `tests/unit/serverContract.test.ts` and
+   `tests/unit/releaseChain.test.ts` fail if the manifest or
+   `server.json` differs.
 2. Move the `[Unreleased]` notes in `CHANGELOG.md` to a dated section.
 3. `npm run check` and `npm run test:e2e` green, and
    `./scripts/inspector-smoke.sh` against a test tenant.
@@ -242,9 +246,10 @@ Releases are cut by the maintainer:
    workflow on that commit, builds the reproducible MCPB bundle and the
    npm tarball with a CycloneDX SBOM each, and creates the GitHub
    Release with these assets and `SHA256SUMS` (an existing release is
-   never overwritten). Its npm publish job stays off until the
-   repository variable `NPM_PUBLISH_ENABLED` is `true`. The repository
-   settings it relies on are in
+   never overwritten). For a stable version it then lists the bundle in
+   the official MCP Registry (`mcp-registry.yml`). Its npm publish job
+   stays off until the repository variable `NPM_PUBLISH_ENABLED` is
+   `true`. The repository settings it relies on are in
    [`maintainers/repo-settings.md`](maintainers/repo-settings.md).
 
 ## Troubleshooting

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mguttmann/action1-mcp",
+  "title": "Action1 RMM (unofficial)",
+  "description": "Unofficial MCP server for the Action1 RMM API: fleet queries, scripts, updates, guarded changes.",
+  "repository": {
+    "url": "https://github.com/mguttmann/action1-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/mguttmann/action1-mcp#readme",
+  "version": "0.6.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/mguttmann/action1-mcp/releases/download/v0.6.0/action1-mcp-0.6.0.mcpb",
+      "version": "0.6.0",
+      "fileSha256": "49a673149bb9815e1121cd6404160312092dc6309b9328487962606b01f4a423",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ACTION1_BASE_URL",
+          "description": "Action1 API base URL of your region: https://app.eu.action1.com/api/3.0 (Europe), https://app.action1.com/api/3.0 (North America), https://app.na-2.action1.com/api/3.0 (North America 2), https://app.uk.action1.com/api/3.0 (United Kingdom) or https://app.au.action1.com/api/3.0 (Australia).",
+          "isRequired": true,
+          "format": "string",
+          "default": "https://app.eu.action1.com/api/3.0",
+          "choices": [
+            "https://app.eu.action1.com/api/3.0",
+            "https://app.action1.com/api/3.0",
+            "https://app.na-2.action1.com/api/3.0",
+            "https://app.uk.action1.com/api/3.0",
+            "https://app.au.action1.com/api/3.0"
+          ]
+        },
+        {
+          "name": "ACTION1_ORG_ID",
+          "description": "Default Action1 organization UUID; each tool can override it with org_id.",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "ACTION1_CLIENT_ID",
+          "description": "API client ID from the Action1 console, Settings > API Credentials (api-key-...@action1.com). It can run code on every managed endpoint: treat it like an admin password.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "ACTION1_CLIENT_SECRET",
+          "description": "API client secret, shown once when the credential is created.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "ACTION1_ALLOW_DESTRUCTIVE",
+          "description": "true lets tools that change state (run scripts, deploy updates, reboot, uninstall) execute; each call still needs confirm \"YES\" and dry_run false. Default false: query only.",
+          "isRequired": false,
+          "format": "boolean",
+          "default": "false"
+        }
+      ]
+    }
+  ]
+}
