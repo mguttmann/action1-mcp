@@ -14,8 +14,10 @@ or on the GitHub plan.
 
 Settings > Rules > Rulesets > New branch ruleset.
 
-- Name `main`, enforcement **Active**, target **Default branch**, no
-  bypass actors.
+- Name `main`, enforcement **Active**, target **Default branch**,
+  bypass actor **Repository admin** (the single maintainer pushes
+  directly; outside contributions go through pull requests and the
+  required checks).
 - **Restrict deletions** and **Block force pushes**.
 - **Require a pull request before merging** (required approvals 0 while
   there is a single maintainer; raise it with a second one).
@@ -44,6 +46,7 @@ gh api -X POST repos/{owner}/{repo}/rulesets --input - <<'EOF'
   "name": "main",
   "target": "branch",
   "enforcement": "active",
+  "bypass_actors": [ { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" } ],
   "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
   "rules": [
     { "type": "deletion" },
