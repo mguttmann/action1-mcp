@@ -88,7 +88,8 @@ Settings > Actions > General:
 - **Workflow permissions**: *Read repository contents and packages
   permissions*. Every workflow declares its own minimal `permissions`;
   only the `github-release`, `mcp-registry` and `npm-publish` jobs of
-  `release.yml` ask for more.
+  `release.yml` and `mcp-registry.yml` (`id-token: write`, also when
+  started by hand) ask for more.
 - **Allow GitHub Actions to create and approve pull requests**: off.
 - **Actions permissions**: allow actions created by GitHub (all actions
   in use are `actions/*`, pinned by commit SHA).

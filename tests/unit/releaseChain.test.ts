@@ -196,7 +196,7 @@ describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
     expect(registry).toMatch(/^ {2}workflow_dispatch:/m);
   });
 
-  it("runs a pinned, checksum-verified mcp-publisher and takes the asset hash from the release", () => {
+  it("runs a pinned, checksum-verified mcp-publisher and reads SHA256SUMS of the release", () => {
     expect(registry).toMatch(/MCP_PUBLISHER_VERSION: v\d+\.\d+\.\d+\n/);
     expect(registry).toMatch(/MCP_PUBLISHER_SHA256: [0-9a-f]{64}\n/);
     const run = [...jobs(registry).values()].flatMap(runLines);

@@ -78,6 +78,7 @@ open and why.
 - Build scripts: `scripts/*.mjs` are linted but not type-checked or formatted, and there is no shellcheck.
 - Dependabot: the majors held back on purpose (typescript, express, `@types/express`) are not ignored, and vitest and `@vitest/coverage-v8` are not grouped.
 - Install scripts: there is no `allowScripts` policy for `esbuild` and `fsevents`.
+- MCP Registry workflow (built, not yet run; it can only run once it is on `main`): the lookup that skips an already listed version does not pass `include_deleted`, so a version set to `deleted` with `mcp-publisher status` makes a re-run fail at publish instead of skipping; a hand-started run takes the static fields of `server.json` from whatever branch it is started on, not necessarily `main`; the test does not compare the committed `fileSha256` with the release (the workflow overwrites it).
 - Tools outside the lockfile: the pinned Inspector (`npx`) and the gitleaks version in `ci.yml` are not tracked by Dependabot.
 - Bundle metadata: the MCPB manifest's `compatibility` block declares only the Node range (no `platforms`, no `claude_desktop`), and the bundled README is the developer build guide.
 - Bundle wizard: the MCPB wizard does not offer `ACTION1_ALLOWED_ORG_IDS`, `ACTION1_TOOLSETS` or `ACTION1_REDACT_PII`.
