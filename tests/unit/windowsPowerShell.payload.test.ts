@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildSimplePolicyPayload,
-  buildWindowsPowerShellPayload,
-} from "../../src/payloads/windowsPowerShell.js";
+import { buildWindowsPowerShellPayload } from "../../src/payloads/windowsPowerShell.js";
 
 describe("buildWindowsPowerShellPayload", () => {
   it("always sets success_exit_codes to a non-empty value", () => {
@@ -24,32 +21,7 @@ describe("buildWindowsPowerShellPayload", () => {
   });
 
   it("rejects missing inputs", () => {
-    expect(() =>
-      buildWindowsPowerShellPayload({ endpointId: "", scriptText: "x" }),
-    ).toThrow();
-    expect(() =>
-      buildWindowsPowerShellPayload({ endpointId: "ep", scriptText: "" }),
-    ).toThrow();
-  });
-});
-
-describe("buildSimplePolicyPayload", () => {
-  it("wraps a template_id with the standard envelope", () => {
-    const p = buildSimplePolicyPayload({
-      endpointId: "ep",
-      templateId: "reboot",
-    });
-    expect(p.actions[0]!.template_id).toBe("reboot");
-    expect(p.endpoints).toEqual([{ id: "ep", type: "Endpoint" }]);
-    expect(p.actions[0]!.params).toEqual({});
-  });
-
-  it("forwards params untouched", () => {
-    const p = buildSimplePolicyPayload({
-      endpointId: "ep",
-      templateId: "deploy_update",
-      params: { updates: ["pkg-1"] },
-    });
-    expect(p.actions[0]!.params).toEqual({ updates: ["pkg-1"] });
+    expect(() => buildWindowsPowerShellPayload({ endpointId: "", scriptText: "x" })).toThrow();
+    expect(() => buildWindowsPowerShellPayload({ endpointId: "ep", scriptText: "" })).toThrow();
   });
 });

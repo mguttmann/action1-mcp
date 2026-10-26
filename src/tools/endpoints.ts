@@ -1,11 +1,11 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { Action1Client } from "../client/action1Client.js";
 import { Action1ApiError } from "../client/errors.js";
-import { resolveOrgId } from "../config.js";
+import { loadConfig, resolveOrgId } from "../config.js";
 import { fetchEndpointInfo } from "../client/endpointInfo.js";
 import {
-  cappedListResult,
+  cappedListResultFromStream,
   cursorInputShape,
   cursorListOutputShape,
   endpointIdSchema,
@@ -16,13 +16,24 @@ import {
   orgIdShape,
   pagedListResult,
   runTool,
-  singleObjectOutputShape,
+  objectOutputShape,
 } from "./helpers.js";
-import { collect } from "../client/pagination.js";
 import { detectPlatform } from "../utils/osDetect.js";
 import { bareEndpoint, compactEndpoint } from "../utils/capOutput.js";
 import { isEndpointActuallyOnline } from "../utils/lastSeen.js";
-import { buildCursor, fingerprintQuery, pagedFetch, parseCursor } from "../utils/cursor.js";
+import { fingerprintQuery, pagedFetch } from "../utils/cursor.js";
+import { listPageFetcher } from "../client/pagination.js";
+import {
+  ENDPOINT_FILTER_VALUES,
+  endpointRebootRequired,
+  endpointSearchValues,
+  endpointView,
+  type EndpointSearchField,
+  rebootRequiredQueryValue,
+  resetCacheQueryValue,
+} from "../spec/entities.js";
+
+const values = (vs: readonly string[]): string => vs.join(", ");
 
 const projectEndpoint = (raw: unknown, mode: "bare" | "compact" | "full"): unknown => {
   if (mode === "full") return raw;
@@ -37,17 +48,11 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
       title: "List managed endpoints (cursor-paginated)",
       description:
         "List endpoints with server-side filters (status, online_status, os, reboot_required, …). For counts, use action1_endpoints_summary instead.",
-      inputSchema: {
+      inputSchema: z.object({
         ...orgIdShape,
         ...cursorInputShape,
         ...formatShape,
-        page_size: z
-          .number()
-          .int()
-          .min(1)
-          .max(500)
-          .optional()
-          .describe("Upstream page size."),
+        page_size: z.number().int().min(1).max(500).optional().describe("Upstream page size."),
         projection: z
           .enum(["bare", "compact", "full"])
           .optional()
@@ -64,27 +69,38 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
         filter: z
           .string()
           .optional()
-          .describe("Action1 filter expr (e.g. status=='Connected')."),
+          .describe("Case-insensitive substring; an endpoint matches when any field contains it."),
         status: z
           .string()
           .optional()
-          .describe("Filter by status (Connected/Disconnected)."),
-        online_status: z.string().optional().describe("Filter by online status."),
-        update_status: z.string().optional().describe("Filter by update status."),
+          .describe("Filter by status: " + values(ENDPOINT_FILTER_VALUES.status) + "."),
+        online_status: z
+          .string()
+          .optional()
+          .describe(
+            "Filter by online status: " + values(ENDPOINT_FILTER_VALUES.online_status) + ".",
+          ),
+        update_status: z
+          .string()
+          .optional()
+          .describe(
+            "Filter by update status: " + values(ENDPOINT_FILTER_VALUES.update_status) + ".",
+          ),
         vulnerability_status: z
           .string()
           .optional()
-          .describe("Filter by vulnerability status."),
+          .describe(
+            "Filter by vulnerability status: " +
+              values(ENDPOINT_FILTER_VALUES.vulnerability_status) +
+              ".",
+          ),
         reboot_required: z
-          .enum(["yes", "no"])
+          .enum(["Yes", "No", "yes", "no"])
           .optional()
-          .describe("Filter by reboot-required."),
-        os: z.string().optional().describe("Filter by OS substring."),
-        reset_cache: z
-          .boolean()
-          .optional()
-          .describe("Bypass cache for fresh page."),
-      },
+          .describe("Filter by reboot-required: Yes or No."),
+        os: z.string().optional().describe("Filter by operating system name."),
+        reset_cache: z.boolean().optional().describe("Bypass cache for fresh page."),
+      }),
       outputSchema: cursorListOutputShape,
       annotations: {
         readOnlyHint: true,
@@ -126,12 +142,13 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
           online_status: online_status ?? "",
           update_status: update_status ?? "",
           vulnerability_status: vulnerability_status ?? "",
-          reboot_required: reboot_required ?? "",
+          reboot_required:
+            reboot_required !== undefined ? rebootRequiredQueryValue(reboot_required) : "",
           os: os ?? "",
           reset_cache: reset_cache ?? false,
           fields: fields ?? "",
         });
-        const baseQuery: Record<string, unknown> = {};
+        const baseQuery: Record<string, string> = {};
         if (sortby !== undefined) baseQuery.sortby = sortby;
         if (filter !== undefined) baseQuery.filter = filter;
         if (status !== undefined) baseQuery.status = status;
@@ -139,27 +156,20 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
         if (update_status !== undefined) baseQuery.update_status = update_status;
         if (vulnerability_status !== undefined)
           baseQuery.vulnerability_status = vulnerability_status;
-        if (reboot_required !== undefined) baseQuery.reboot_required = reboot_required;
+        if (reboot_required !== undefined) {
+          baseQuery.reboot_required = rebootRequiredQueryValue(reboot_required);
+        }
         if (os !== undefined) baseQuery.os = os;
-        if (reset_cache !== undefined) baseQuery.reset_cache = reset_cache;
+        if (reset_cache !== undefined) baseQuery.reset_cache = resetCacheQueryValue(reset_cache);
         if (fields !== undefined) baseQuery.fields = fields;
-        const result = await pagedFetch<unknown>(
-          async ({ from, limit: pageLimit }) => {
-            const raw = (await client.request<unknown>(
-              `/endpoints/managed/${encodeURIComponent(orgId)}`,
-              { query: { ...baseQuery, limit: pageLimit, from } },
-            )) as { items?: unknown[] } | unknown[];
-            const items = Array.isArray(raw) ? raw : (raw.items ?? []);
-            return {
-              items: items.map((it) => projectEndpoint(it, mode)),
-              hasMore: items.length === pageLimit,
-            };
-          },
+        const result = await pagedFetch<unknown, unknown>(
+          listPageFetcher(client, `/endpoints/managed/${encodeURIComponent(orgId)}`, baseQuery),
           {
             ...(cursor !== undefined ? { cursor } : {}),
             fingerprint: fp,
             pageSize: page_size ?? 200,
             ...(limit !== undefined ? { maxItems: limit } : {}),
+            project: (it) => projectEndpoint(it, mode),
           },
         );
         return pagedListResult(result, response_format);
@@ -170,12 +180,25 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     "action1_endpoints_summary",
     {
       title: "Server-side aggregation over all endpoints",
-      description: "Walks every endpoint and returns counts (total, by status/platform/OS/online, reboot_required). ~1 KB output regardless of fleet size.",
-      inputSchema: {
+      description:
+        "Walks every endpoint and returns counts (total, by status/platform/OS/online, reboot_required). ~1 KB output regardless of fleet size.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
-      },
-      outputSchema: singleObjectOutputShape,
+      }),
+      outputSchema: objectOutputShape({
+        total: "number",
+        by_status: "object",
+        by_platform: "object",
+        by_os: "object",
+        by_online_status: "object",
+        fresh_last_seen: "number",
+        stale_last_seen: "number",
+        reboot_required: "number",
+        windows: "number",
+        macos: "number",
+        linux: "number",
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -185,14 +208,10 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     },
     async ({ org_id, response_format }) =>
       runTool(async () => {
-        const orgId = resolveOrgId(org_id);
-        const all = await collect(
-          client.paginate<unknown>(`/endpoints/managed/${encodeURIComponent(orgId)}`, {
-            limit: 200,
-          }),
-        );
+        const cfg = loadConfig();
+        const orgId = resolveOrgId(org_id, cfg);
         const counters = {
-          total: all.length,
+          total: 0,
           by_status: {} as Record<string, number>,
           by_platform: {} as Record<string, number>,
           by_os: {} as Record<string, number>,
@@ -204,23 +223,27 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
           macos: 0,
           linux: 0,
         };
-        for (const ep of all) {
+        // Stream the walk: only the counters are kept, never the fleet.
+        for await (const ep of client.paginate<unknown>(
+          `/endpoints/managed/${encodeURIComponent(orgId)}`,
+          { limit: 200 },
+        )) {
+          counters.total += 1;
           if (!ep || typeof ep !== "object") continue;
           const e = ep as Record<string, unknown>;
-          const status = typeof e.status === "string" ? e.status : "Unknown";
-          counters.by_status[status] = (counters.by_status[status] ?? 0) + 1;
-          const platform = typeof e.platform === "string" ? e.platform : "Unknown";
-          counters.by_platform[platform] = (counters.by_platform[platform] ?? 0) + 1;
-          const os = typeof e.OS === "string" ? e.OS : "Unknown";
-          counters.by_os[os] = (counters.by_os[os] ?? 0) + 1;
-          const online = typeof e.online_status === "string" ? e.online_status : "Unknown";
-          counters.by_online_status[online] = (counters.by_online_status[online] ?? 0) + 1;
-          const conn = isEndpointActuallyOnline(e);
+          const v = endpointView(e);
+          const count = (rec: Record<string, number>, key: string | undefined) => {
+            const k = key ?? "Unknown";
+            rec[k] = (rec[k] ?? 0) + 1;
+          };
+          count(counters.by_status, v.status);
+          count(counters.by_platform, v.platform);
+          count(counters.by_os, v.os);
+          count(counters.by_online_status, v.onlineStatus);
+          const conn = isEndpointActuallyOnline(e, cfg.lastSeenStaleMinutes);
           if (conn.online) counters.fresh_last_seen += 1;
           else counters.stale_last_seen += 1;
-          if (e.reboot_required === "yes" || e.reboot_required === true) {
-            counters.reboot_required += 1;
-          }
+          if (endpointRebootRequired(e)) counters.reboot_required += 1;
           const detected = detectPlatform(e);
           if (detected === "windows") counters.windows += 1;
           else if (detected === "macos") counters.macos += 1;
@@ -234,13 +257,19 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     "action1_get_endpoint",
     {
       title: "Get endpoint general info",
-      description: "Fetch the general info block for a single endpoint, plus derived platform and connectivity.online flags.",
-      inputSchema: {
+      description:
+        "Fetch the general info block for a single endpoint, plus derived platform and connectivity.online flags.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         endpoint_id: endpointIdSchema,
-      },
-      outputSchema: singleObjectOutputShape,
+      }),
+      outputSchema: objectOutputShape({
+        general: "object",
+        platform: "string",
+        connectivity: "object",
+        source: "string",
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -250,10 +279,11 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     },
     async ({ org_id, endpoint_id, response_format }) =>
       runTool(async () => {
-        const orgId = resolveOrgId(org_id);
+        const cfg = loadConfig();
+        const orgId = resolveOrgId(org_id, cfg);
         const info = await fetchEndpointInfo(client, orgId, endpoint_id);
         const platform = detectPlatform(info.data);
-        const connectivity = isEndpointActuallyOnline(info.data);
+        const connectivity = isEndpointActuallyOnline(info.data, cfg.lastSeenStaleMinutes);
         return jsonResult(
           { general: info.data, platform, connectivity, source: info.source },
           {
@@ -271,8 +301,9 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     "action1_search_endpoints",
     {
       title: "Search endpoints (client-side substring filter, cursor-paginated)",
-      description: "Substring search across hostname, user, OS, status. Walks pages client-side since Action1 has no server-side substring search.",
-      inputSchema: {
+      description:
+        "Case-insensitive substring search restricted to hostname, user, OS and status fields. Walks the endpoint list page by page and matches client-side.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...cursorInputShape,
         ...formatShape,
@@ -285,7 +316,7 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
           .enum(["bare", "compact", "full"])
           .optional()
           .describe("Per-endpoint projection."),
-      },
+      }),
       outputSchema: cursorListOutputShape,
       annotations: {
         readOnlyHint: true,
@@ -297,7 +328,9 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     async ({ org_id, cursor, limit, query, fields, projection, response_format }) =>
       runTool(async () => {
         const orgId = resolveOrgId(org_id);
-        const useFields = new Set<string>(fields ?? ["hostname", "user", "os", "status"]);
+        const useFields = new Set<EndpointSearchField>(
+          fields ?? ["hostname", "user", "os", "status"],
+        );
         const mode = projection ?? "compact";
         const fp = fingerprintQuery({
           orgId,
@@ -305,52 +338,23 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
           fields: [...useFields].sort(),
           mode,
         });
-        const startFrom = cursor ? (parseCursor(cursor)?.from ?? 0) : 0;
-        const matches: unknown[] = [];
-        const cap = 400_000;
-        let pos = startFrom;
-        const hardLimit = limit ?? Number.POSITIVE_INFINITY;
-        while (matches.length < hardLimit) {
-          const raw = (await client.request<unknown>(
-            `/endpoints/managed/${encodeURIComponent(orgId)}`,
-            { query: { limit: 200, from: pos } },
-          )) as { items?: unknown[] } | unknown[];
-          const items = Array.isArray(raw) ? raw : (raw.items ?? []);
-          if (items.length === 0) break;
-          pos += items.length;
-          for (const it of items) {
-            if (matches.length >= hardLimit) break;
-            const candidates = collectFieldValues(it, useFields);
-            if (!candidates.some((s) => s.toLowerCase().includes(query.toLowerCase()))) continue;
-            matches.push(projectEndpoint(it, mode));
-            if (JSON.stringify(matches).length > cap) {
-              matches.pop();
-              return pagedListResult(
-                {
-                  items: matches,
-                  count: matches.length,
-                  // Use the shared buildCursor helper so the wire format
-                  // stays in lock-step with parseCursor / pagedFetch — a
-                  // hand-rolled base64 of {from, q} would silently drift
-                  // if the cursor schema ever changes.
-                  next_cursor: buildCursor(pos - 1, fp),
-                  has_more: true,
-                },
-                response_format,
-              );
-            }
-          }
-          if (items.length < 200) break;
-        }
-        return pagedListResult(
+        const needle = query.toLowerCase();
+        // pagedFetch tracks the upstream position of every scanned
+        // record, so a page that ends on the byte cap or on `limit`
+        // resumes exactly at the first match not yet returned.
+        const result = await pagedFetch<unknown, unknown>(
+          listPageFetcher(client, `/endpoints/managed/${encodeURIComponent(orgId)}`),
           {
-            items: matches,
-            count: matches.length,
-            next_cursor: null,
-            has_more: false,
+            ...(cursor !== undefined ? { cursor } : {}),
+            fingerprint: fp,
+            pageSize: 200,
+            ...(limit !== undefined ? { maxItems: limit } : {}),
+            filter: (it) =>
+              endpointSearchValues(it, useFields).some((v) => v.toLowerCase().includes(needle)),
+            project: (it) => projectEndpoint(it, mode),
           },
-          response_format,
         );
+        return pagedListResult(result, response_format);
       }),
   );
 
@@ -358,19 +362,14 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     "action1_list_missing_updates",
     {
       title: "List missing updates for an endpoint",
-      description: "Returns missing-update items for one endpoint. Each item.id can be passed to action1_deploy_update.",
-      inputSchema: {
+      description:
+        "Returns missing-update items for one endpoint. Each item.id can be passed to action1_deploy_update.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         endpoint_id: endpointIdSchema,
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(2000)
-          .optional()
-          .describe("Max items to return."),
-      },
+        limit: z.number().int().min(1).max(2000).optional().describe("Max items to return."),
+      }),
       outputSchema: listOutputShape,
       annotations: {
         readOnlyHint: true,
@@ -382,13 +381,13 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     async ({ org_id, endpoint_id, limit, response_format }) =>
       runTool(async () => {
         const orgId = resolveOrgId(org_id);
-        const items = await collect(
+        return cappedListResultFromStream(
           client.paginate<unknown>(
             `/endpoints/managed/${encodeURIComponent(orgId)}/${encodeURIComponent(endpoint_id)}/missing-updates`,
             { limit: 200, ...(limit !== undefined ? { maxItems: limit } : {}) },
           ),
+          response_format,
         );
-        return cappedListResult(items, response_format);
       }),
   );
 
@@ -396,12 +395,13 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
     "action1_list_vulnerabilities",
     {
       title: "List vulnerabilities for an endpoint",
-      description: "Returns vulnerability findings for one endpoint. Returns a clear 403 if the API key lacks the vulnerabilities scope.",
-      inputSchema: {
+      description:
+        "Returns vulnerability findings for one endpoint. Returns a clear 403 if the API key lacks the vulnerabilities scope.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         endpoint_id: endpointIdSchema,
-      },
+      }),
       outputSchema: listOutputShape,
       annotations: {
         readOnlyHint: true,
@@ -414,13 +414,13 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
       runTool(async () => {
         const orgId = resolveOrgId(org_id);
         try {
-          const items = await collect(
+          return await cappedListResultFromStream(
             client.paginate<unknown>(
               `/endpoints/managed/${encodeURIComponent(orgId)}/${encodeURIComponent(endpoint_id)}/vulnerabilities`,
               { limit: 200 },
             ),
+            response_format,
           );
-          return cappedListResult(items, response_format);
         } catch (err) {
           // Action1 returns 403 when the API key role lacks the
           // `view_vulnerabilities` scope. Surface the curated hint
@@ -435,41 +435,4 @@ export function registerEndpointTools(server: McpServer, client: Action1Client):
         }
       }),
   );
-}
-
-function collectFieldValues(value: unknown, useFields: Set<string>): string[] {
-  if (!value || typeof value !== "object") return [];
-  const obj = value as Record<string, unknown>;
-  const lookup = new Map<string, unknown>();
-  for (const k of Object.keys(obj)) lookup.set(k.toLowerCase(), obj[k]);
-  const out: string[] = [];
-  if (useFields.has("hostname")) {
-    for (const key of ["hostname", "computer_name", "device_name", "name", "address"]) {
-      pushFromLookup(out, lookup, key);
-    }
-  }
-  if (useFields.has("user")) {
-    for (const key of ["last_logged_user", "user", "primary_user"]) {
-      pushFromLookup(out, lookup, key);
-    }
-  }
-  if (useFields.has("os")) {
-    for (const key of ["os", "operating_system", "platform"]) {
-      const v = lookup.get(key);
-      if (typeof v === "string") out.push(v);
-      else if (v && typeof v === "object") {
-        const name = (v as Record<string, unknown>).name;
-        if (typeof name === "string") out.push(name);
-      }
-    }
-  }
-  if (useFields.has("status")) {
-    for (const key of ["status", "online_status"]) pushFromLookup(out, lookup, key);
-  }
-  return out;
-}
-
-function pushFromLookup(arr: string[], lookup: Map<string, unknown>, key: string): void {
-  const v = lookup.get(key);
-  if (typeof v === "string" && v.length > 0) arr.push(v);
 }

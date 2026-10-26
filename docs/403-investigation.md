@@ -12,7 +12,7 @@ GET /endpoints/managed/{orgId}/{endpointId}
 
 (without any trailing `/general`). It returns the same `Endpoint` schema as one
 item in `/endpoints/managed/{orgId}` and requires only the `view_endpoints`
-permission — the same permission as listing.
+permission - the same permission as listing.
 
 The 403 was the API rejecting a non-routed path, not a permission gap. No role
 change in the Action1 admin console is required.
@@ -23,7 +23,7 @@ change in the Action1 admin console is required.
 trailing `/general` segment is dropped.
 
 This is **not** something the Action1 admin can or should fix by granting a
-permission — there is no separate "Endpoint Details" or "Endpoint Inventory"
+permission - there is no separate "Endpoint Details" or "Endpoint Inventory"
 permission in the Action1 catalog.
 
 ## Findings
@@ -32,19 +32,22 @@ The Action1 OpenAPI spec (Swagger UI bundle, embedded in the JS asset) defines
 exactly six paths under `/endpoints/managed/...`. None of them carries a
 `/general` segment:
 
-- `GET /endpoints/managed/{orgId}` — list endpoints
-- `GET /endpoints/managed/{orgId}/{endpointId}` — get a single endpoint
+- `GET /endpoints/managed/{orgId}` - list endpoints
+- `GET`, `PATCH`, `DELETE /endpoints/managed/{orgId}/{endpointId}` - get
+  a single endpoint, change its name or comment, delete it
 - `GET /endpoints/managed/{orgId}/{endpointId}/missing-updates`
-- `GET /endpoints/managed/{orgId}/{endpointId}/move`
-- `GET /endpoints/managed/{orgId}/{endpointId}/remote-sessions`
-- `GET /endpoints/managed/{orgId}/{endpointId}/remote-sessions/{sessionId}`
+- `POST /endpoints/managed/{orgId}/{endpointId}/move` - move the endpoint
+  to another organization
+- `POST /endpoints/managed/{orgId}/{endpointId}/remote-sessions` - start a
+  remote session
+- `GET`, `PATCH /endpoints/managed/{orgId}/{endpointId}/remote-sessions/{sessionId}`
 
 The bundled spec is identical for the EU and US instances.
 
 The documented detail operation's spec text reads (verbatim):
 
-> `GET /endpoints/managed/{orgId}/{endpointId}` — *"Getting a specific
-> endpoint"* — *"Requires permission: `view_endpoints`. Obtains current
+> `GET /endpoints/managed/{orgId}/{endpointId}` - *"Getting a specific
+> endpoint"* - *"Requires permission: `view_endpoints`. Obtains current
 > information about the endpoint with the specified ID."*
 
 The list operation requires the same permission. So if listing works, the
@@ -58,7 +61,7 @@ lookup table in `PSAction1.psm1` defines:
 G_Endpoint = /endpoints/managed/{Org}/{Object_ID}
 ```
 
-— with no `/general` suffix. PSAction1 ignores the `/general` value emitted
+- with no `/general` suffix. PSAction1 ignores the `/general` value emitted
 inside `self` URLs and always calls the bare path.
 
 The Action1
@@ -73,7 +76,7 @@ lists exactly three endpoint-related permissions:
 
 There is no separate "View Endpoint Details" permission. The
 [API Credentials docs](https://www.action1.com/api-documentation/api-credentials/)
-make it explicit that API keys are role-bound the same way human users are —
+make it explicit that API keys are role-bound the same way human users are -
 no API-only scope to flip.
 
 The `/general` segment is most likely an artifact of the Action1 web console's
@@ -93,7 +96,7 @@ GET /endpoints/managed/{org}/{ep}/general    -> 403
 ```
 
 The 200 response carries every field we need (`id`, `status`, `last_seen`,
-`OS`, `platform`, `agent_version`, `online_status`, etc.) — i.e. the same
+`OS`, `platform`, `agent_version`, `online_status`, etc.) - i.e. the same
 fields that appear in the list response.
 
 ## Resolution applied
@@ -118,7 +121,7 @@ Tools that previously surfaced `source: "general"` now surface
   <https://www.action1.com/api-documentation/api-credentials/>
 - Managed Endpoints UI doc (mentions the "General" pane):
   <https://www.action1.com/documentation/managed-endpoints/>
-- PSAction1 source (URI table around `PSAction1.psm1` lines 30–66, README
+- PSAction1 source (URI table around `PSAction1.psm1` lines 30-66, README
   example around line 219): <https://github.com/Action1Corp/PSAction1>
 
 ## Recommendation

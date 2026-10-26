@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in action1-mcp-server does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Before you paste anything, **remove secrets and customer data**:
+        Action1 client ID and secret, `MCP_HTTP_TOKEN`, org and endpoint UUIDs, hostnames,
+        user names, IP and MAC addresses. Replace them with placeholders such as `<org-uuid>`.
+        Security issues go to a private advisory, not here.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `node dist/index.js --version` or the commit SHA.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version (`node -v`), operating system, MCP host and its version, transport (stdio, HTTP or MCPB bundle).
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The tool you called, the arguments (redacted), and the result or error you got.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log (stderr, redacted)
+      description: The JSON log lines around the failure. The server redacts credentials, but check for customer data.
+      render: text
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed credentials, tokens and customer identifiers from everything above.
+          required: true

@@ -1,62 +1,76 @@
 # Installation Guide
 
-This document walks you through installing **action1-mcp-server** and connecting it to
-the MCP host of your choice. Pick the section that matches your setup.
+This guide installs **action1-mcp-server** and connects it to the MCP host
+of your choice. Pick the section that matches your setup.
+
+This is an unofficial project, not affiliated with or endorsed by Action1.
 
 ## Prerequisites
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Node.js | ≥ 20 | Native `fetch`, `--env-file` and `node:test` rely on this. |
-| npm | bundled with Node | Or `pnpm` / `yarn` if you prefer. |
+| Node.js | 22.12 or newer | `engines` in `package.json`; CI tests 22, 24 and 26. `npm run inspector` needs 22.19 or newer. Not needed for the MCPB bundle in Claude Desktop. |
+| npm | bundled with Node | `npm ci` installs exactly the versions in `package-lock.json`. |
 | An Action1 account | any tier | Cloud or trial. |
-| API credentials | `client_id` + `client_secret` | Issued in *Settings → API Credentials*. See [Getting credentials](#getting-action1-api-credentials). |
-
-`git` is recommended but not required — you can also download the repo as a tarball.
+| API credentials | `client_id` + `client_secret` | Issued in *Settings > API Credentials*. See [Getting credentials](#getting-action1-api-credentials). |
 
 ## Getting Action1 API credentials
 
 1. Sign in to your Action1 console.
-2. Navigate to **Settings → API Credentials**.
-3. Click **Add API Credentials**, give it a descriptive name (e.g. `claude-mcp`).
-4. Assign the **role** for this credential. The role determines which API
-   operations succeed; the same role you'd give a human user. For full
-   read-write the built-in *Owner* role works; for read-only smoke testing pick
-   a role with `view_endpoints`, `view_automations`, `view_reports` and friends.
+2. Open **Settings > API Credentials**.
+3. Click **Add API Credentials** and give it a descriptive name (e.g.
+   `claude-mcp`).
+4. Assign a **role**. The role decides which API operations succeed.
+   Start with a read-only role; [`permissions.md`](permissions.md) lists
+   the permission each tool needs. Avoid the *Owner* role.
 5. Copy the `client_id` (looks like `api-key-...@action1.com`) and the
-   `client_secret`. The secret is shown **once** — store it securely.
-6. Note your base URL. Most installations are on the EU instance
-   (`https://app.eu.action1.com/api/3.0`) or the US instance
-   (`https://app.action1.com/api/3.0`).
-7. Note your `org_id`. Either fetch it later via `action1_list_organizations`,
-   or copy it from the URL path when you're inside an organization in the
-   console.
+   `client_secret`. The secret is shown **once**; store it in a password
+   manager. Do not paste it into a chat with an AI assistant.
+6. Note the base URL of your region:
+
+   | Region | Base URL |
+   |---|---|
+   | Europe | `https://app.eu.action1.com/api/3.0` |
+   | North America | `https://app.action1.com/api/3.0` |
+   | North America 2 | `https://app.na-2.action1.com/api/3.0` |
+   | United Kingdom | `https://app.uk.action1.com/api/3.0` |
+   | Australia | `https://app.au.action1.com/api/3.0` |
+
+7. Note your `org_id`: copy it from the console URL inside an
+   organization, or call `action1_list_organizations` later.
 
 ## Step 1: Install the server
 
-### Option A — clone the repo (recommended for now)
+### Option A: MCPB bundle for Claude Desktop
+
+Download `action1-mcp-<version>.mcpb` from the project's
+[GitHub Releases](https://github.com/mguttmann/action1-mcp/releases) and
+continue with [Claude Desktop](#claude-desktop-macos--windows). No Node.js
+installation is needed.
+
+### Option B: from source (every MCP host)
 
 ```bash
 git clone https://github.com/mguttmann/action1-mcp.git
 cd action1-mcp
-npm install
+npm ci
 npm run build
 ```
 
-This produces `dist/index.js`, the executable entry point.
+`npm run build` compiles to `dist/` (TypeScript only; `npm run check`
+runs lint, typecheck, format check and the tests). `dist/index.js` is the entry point.
 
-### Option B — npx (when published to npm)
+### npm (not available yet)
 
-```bash
-npx -y action1-mcp-server@latest
-```
+The package is not published to npm. Do not install `action1-mcp-server`
+or a similarly named package from the registry; it would not be this
+project.
 
-> Status: not on npm yet. Use the clone-and-build path until the first npm release tag.
-
-## Step 2: Configure environment
+## Step 2: Configure environment (source install)
 
 ```bash
 cp .env.example .env
+chmod 600 .env
 ```
 
 Edit `.env`:
@@ -66,38 +80,38 @@ ACTION1_BASE_URL=https://app.eu.action1.com/api/3.0
 ACTION1_ORG_ID=<your-org-uuid>
 ACTION1_CLIENT_ID=api-key-...@action1.com
 ACTION1_CLIENT_SECRET=<your-secret>
-# Optional
-ACTION1_DEFAULT_TIMEOUT_MINUTES=10
-ACTION1_DEFAULT_RETRY_MINUTES=1440
-ACTION1_LOG_LEVEL=info
-ACTION1_ALLOW_DESTRUCTIVE=false   # set to true to permit destructive operations
+# Recommended: only these organizations may be addressed
+ACTION1_ALLOWED_ORG_IDS=<your-org-uuid>
+# Leave off for read-only use; true allows tools that change state
+ACTION1_ALLOW_DESTRUCTIVE=false
 ```
 
-`.env` is in `.gitignore` and never committed — keep it that way.
+Keep comments on their own line. Empty values mean "use the default".
+`.env` is in `.gitignore`; keep it that way. All settings are listed in
+the [README](../README.md#configuration) and in
+`node dist/index.js --help`.
 
-## Step 3: Smoke test
-
-Before wiring up an MCP host, run the Inspector locally.
-
-```bash
-npm run inspector
-```
-
-This launches the MCP Inspector against the built stdio server. In the UI,
-click **Tools → tools/list** — you should see all curated + auto-generated tools. Try
-`action1_list_organizations` (no parameters needed). If it returns your org,
-your install is good.
-
-For headless verification:
+## Step 3: Smoke test (source install)
 
 ```bash
 node --env-file=.env dist/index.js --help
 ```
 
-…prints the CLI help. To run a one-shot tool call:
+prints the version and the settings. To open the MCP Inspector against the
+built server (Node 22.19 or newer):
 
 ```bash
-npx @modelcontextprotocol/inspector --cli \
+npm run inspector
+```
+
+In the UI, open **Tools** and list them: you should see the `action1_*`
+tools. Call `action1_list_organizations` (no parameters); if it returns
+your organization, the install works.
+
+One-shot call from the command line:
+
+```bash
+npx -y @modelcontextprotocol/inspector@2.12.0 --cli \
   node --env-file=.env dist/index.js \
   --method tools/call --tool-name action1_list_organizations
 ```
@@ -114,64 +128,62 @@ claude mcp add action1 -- node --env-file=/abs/path/to/action1-mcp/.env /abs/pat
 claude mcp add --scope user action1 -- node --env-file=/abs/path/to/.env /abs/path/to/dist/index.js
 ```
 
-Verify with `claude mcp list`. In a Claude Code session, type
-`/mcp` to see the loaded servers and their tools.
+Verify with `claude mcp list`. In a Claude Code session, `/mcp` shows the
+loaded servers and their tools.
 
 ### Claude Desktop (macOS / Windows)
 
-Two installation paths. **Option A is recommended** — Claude Desktop
-prompts the user for credentials on first launch, no `.env` file or
-absolute-path config-editing required.
+Two installation paths. **Option A is recommended**: Claude Desktop asks
+for the settings on install, no `.env` file or config editing needed.
 
-#### Option A — MCPB one-click install (recommended)
+#### Option A: MCPB bundle (recommended)
 
-1. **Prerequisites on your machine**:
-   - Node.js ≥ 20 (`node -v`)
-   - `git`
-   - Claude Desktop installed
-
-2. **Clone, install, build the bundle**:
+1. **Get the bundle**: download `action1-mcp-<version>.mcpb` from the
+   [GitHub Releases](https://github.com/mguttmann/action1-mcp/releases),
+   or build it from source:
 
    ```bash
    git clone https://github.com/mguttmann/action1-mcp.git
    cd action1-mcp
-   npm install
-   npm run build:mcpb
+   npm ci
+   npm run build:mcpb        # writes dist/action1-mcp-<version>.mcpb
    ```
 
-   This produces `dist/action1-mcp-<version>.mcpb` (e.g.
-   `dist/action1-mcp-0.5.0.mcpb`).
+   On Windows, run the build in Git Bash (part of Git for Windows): the
+   build script needs bash.
 
-3. **Install into Claude Desktop**:
-   - Double-click the `.mcpb` file, **or** drag it onto the Claude
-     Desktop window, **or** open Claude Desktop → Settings →
-     Extensions → *Install from file* and pick the `.mcpb`.
+2. **Install into Claude Desktop**: double-click the `.mcpb` file, drag it
+   onto the Claude Desktop window, or open Settings > Extensions >
+   *Install from file*.
 
-4. **Fill in credentials** in the wizard that appears. Fields:
+3. **Fill in the wizard**:
 
    | Field | Where to get it |
    |---|---|
-   | **Action1 API base URL** | EU: `https://app.eu.action1.com/api/3.0` (default). US: `https://app.action1.com/api/3.0`. |
-   | **Default organization ID** | Action1 console URL contains the UUID after `/org/`. |
-   | **API client ID** | Action1 console → Settings → API Credentials → looks like `api-key-…@action1.com`. |
-   | **API client secret** | Shown **once** when you create the credential — store it in a password manager. |
-   | **Allow destructive operations** | Leave `false` for read-only safety. Set `true` only if this Claude session should be able to run scripts / deploy updates / reboot. Even when `true`, every destructive call still requires per-call `confirm: "YES"` and `dry_run: false`. |
+   | **Action1 API base URL** | Your region, see [Getting credentials](#getting-action1-api-credentials). Default: Europe. |
+   | **Default organization ID** | The organization UUID from the console URL. |
+   | **API client ID** | Action1 console > Settings > API Credentials, looks like `api-key-...@action1.com`. |
+   | **API client secret** | Shown **once** when you create the credential. |
+   | **Allow destructive operations** | A checkbox. Leave it unchecked for read-only use. Checked, tools that change state may execute, still only with per-call `confirm: "YES"` and `dry_run: false`. |
 
-5. **Restart Claude Desktop** if the tools do not appear immediately.
-   Open a new chat and type `What MCP tools are available?` — you
-   should see ~166 `action1_*` tools. Try `action1_list_organizations`
-   as a read-only smoke test.
+   Type the client ID and secret only into this dialog. Account
+   operations (users, roles, organizations, enterprise) stay disabled in
+   the bundle.
 
-> **Updating later**: `git pull && npm install && npm run build:mcpb`,
-> then re-install the new `.mcpb` from Claude Desktop's Extensions UI.
-> Credentials carry over.
+4. **Restart Claude Desktop** if the tools do not appear. In a new chat,
+   ask *"What Action1 tools are available?"*: you should see a long list
+   of `action1_*` tools. Try `action1_list_organizations` as a read-only
+   smoke test.
 
-#### Option B — manual JSON config (advanced)
+> **Updating later**: download or build the new `.mcpb` and install it
+> again from Settings > Extensions. Settings carry over.
 
-Use this only if you need to point at a specific build, run from a
-non-standard path, or prefer environment-variable management.
+#### Option B: manual JSON config (advanced)
 
-Edit your config file:
+Use this only to run a specific build or to manage the configuration
+yourself.
+
+Edit the config file:
 
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
@@ -192,34 +204,39 @@ Add to the `mcpServers` map:
 }
 ```
 
-Restart Claude Desktop. The tools appear in the connector menu.
+Quit and restart Claude Desktop. The tools appear in the connector menu.
 
-> **Note**: Claude Desktop ignores remote-HTTP MCP servers placed in this file.
+> **Note**: Claude Desktop ignores remote HTTP MCP servers in this file.
 
 ### Claude.ai (web)
 
-Claude.ai supports MCP through *Custom Connectors* (Settings → Connectors → Add
-custom connector). This requires the **Streamable HTTP** transport.
+Claude.ai connects to remote MCP servers through *Custom Connectors*
+(Settings > Connectors > Add custom connector). That needs the
+**Streamable HTTP** transport on a server reachable over HTTPS.
+
+Run the server on loopback behind a TLS reverse proxy, as described in
+[`DEPLOYMENT.md`](DEPLOYMENT.md#streamable-http-hosted):
 
 ```bash
-# On your server
-ACTION1_ALLOW_DESTRUCTIVE=true \
-  node --env-file=.env dist/index.js --http --port 3000 --host 0.0.0.0
+# On your server; .env contains MCP_HTTP_TOKEN, MCP_HTTP_ALLOWED_HOSTS and TRUST_PROXY
+node --env-file=.env dist/index.js --http --host 127.0.0.1 --port 3000
 ```
 
 In Claude.ai:
 
-1. Settings → Connectors → **Add custom connector**.
-2. URL: `https://your-host:3000/mcp` (must be HTTPS in production).
-3. Auth: add a static `Authorization: Bearer <token>` header if you front the
-   server with a reverse proxy (recommended — Action1 credentials should not
-   be reachable from the public internet without auth).
+1. Settings > Connectors > **Add custom connector**.
+2. URL: `https://<your-public-name>/mcp` (the reverse proxy, not port 3000
+   directly).
+3. Add the request header `Authorization: Bearer <MCP_HTTP_TOKEN value>`.
 
-See [`DEPLOYMENT.md`](DEPLOYMENT.md) for a TLS + reverse-proxy template.
+Do not bind the server to `0.0.0.0` without a proxy, and do not enable
+`ACTION1_ALLOW_DESTRUCTIVE` on a server you have not secured with TLS, a
+token and `ACTION1_ALLOWED_ORG_IDS`.
 
 ### Cursor
 
-Cursor reads `~/.cursor/mcp.json` (per-user) or `.cursor/mcp.json` (per-repo).
+Cursor reads `~/.cursor/mcp.json` (per user) or `.cursor/mcp.json` (per
+repository).
 
 ```jsonc
 {
@@ -235,22 +252,25 @@ Cursor reads `~/.cursor/mcp.json` (per-user) or `.cursor/mcp.json` (per-repo).
 }
 ```
 
-Restart Cursor; tools appear in the chat UI.
+Restart Cursor; the tools appear in the chat UI.
 
 ### Continue.dev / Cody / generic stdio clients
 
-Any MCP-compliant client that speaks stdio works. The command-line is always:
+Any MCP client that speaks stdio works. The command line is always:
 
 ```bash
 node --env-file=/abs/path/.env /abs/path/dist/index.js
 ```
 
-For HTTP clients:
+For HTTP clients, `--http` needs `MCP_HTTP_TOKEN` in the environment:
 
 ```bash
 node --env-file=.env dist/index.js --http
-# default endpoint: http://127.0.0.1:3000/mcp
+# endpoint: http://127.0.0.1:3000/mcp, header Authorization: Bearer <token>
 ```
+
+For a quick local test without a token, `MCP_HTTP_ALLOW_NO_AUTH=true`
+works on a loopback bind only.
 
 ## Step 5: Verify connectivity
 
@@ -258,13 +278,13 @@ In your MCP host, ask:
 
 > List my Action1 organizations.
 
-Claude (or any other MCP-aware model) will call `action1_list_organizations`.
-You should see your organization in the response. If you don't:
+The model calls `action1_list_organizations`. You should see your
+organization. If not:
 
-1. Check `ACTION1_BASE_URL` matches your region's instance.
-2. Check `ACTION1_CLIENT_ID` and `ACTION1_CLIENT_SECRET` are right (no
-   trailing whitespace in `.env`).
-3. Look at the server's stderr — the structured logger prints auth events.
+1. Check that `ACTION1_BASE_URL` is your region.
+2. Check `ACTION1_CLIENT_ID` and `ACTION1_CLIENT_SECRET`.
+3. Read the server's stderr: the structured logger prints auth and tool
+   events.
 4. Read [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 ## Updating
@@ -272,22 +292,26 @@ You should see your organization in the response. If you don't:
 ```bash
 cd action1-mcp
 git pull
-npm install
+npm ci
 npm run build
 ```
 
-Restart your MCP host. The tool list refreshes on next connect.
+Restart your MCP host; the tool list refreshes on the next connect. Read
+the [`CHANGELOG`](../CHANGELOG.md) for changed settings.
 
-If the Action1 OpenAPI spec has changed since your last update, the
-`tests/unit/specSha.test.ts` test will fail with a SHA mismatch. That's a
-deliberate signal to review the upstream changes before regenerating —
-[`CONTRIBUTING.md`](CONTRIBUTING.md) explains the codegen workflow.
+Action1 can change its API independently of this project. `npm run
+spec:check` compares the pinned spec with the one Action1 serves; the
+tests only check that the committed spec and the generated tools match
+each other. [`CONTRIBUTING.md`](CONTRIBUTING.md#re-running-codegen)
+explains how to adopt a new spec.
 
 ## Uninstall
 
-- Remove the server entry from your MCP host's config.
-- Delete the cloned repo directory.
-- Optionally revoke the API credential in the Action1 console.
+- Remove the server entry from your MCP host's configuration (or the
+  extension from Claude Desktop).
+- Delete the cloned repository.
+- Revoke the API credential in the Action1 console if you no longer need
+  it.
 
 ---
 
@@ -295,89 +319,60 @@ deliberate signal to review the upstream changes before regenerating —
 
 ### Do I need to clone the repo, or is there a one-click installer?
 
-Two install paths, in order of friction:
+1. **MCPB bundle (Claude Desktop only)**: download the `.mcpb` from the
+   GitHub Release and double-click it. No terminal needed.
+2. **Clone and build**: needed for every other host, and to run a version
+   ahead of the latest release.
 
-1. **MCPB bundle (Claude Desktop only)** — once a release is cut, a
-   `.mcpb` is attached to the GitHub Release. Double-click it. Claude
-   Desktop walks you through filling in credentials. Zero terminal
-   contact.
-2. **Clone + build** — what this guide describes. Required if you
-   want to develop / contribute / run from `main` ahead of a release.
+### Does the server stay running, or does it start per call?
 
-### Does the server stay running, or does it spawn per call?
-
-stdio mode: one process per MCP-host connection, lives as long as the
-host is connected. HTTP mode: one long-running process serves many
-hosts; new `McpServer` per request internally for isolation.
+stdio mode: one process per MCP host connection, alive while the host is
+connected. HTTP mode: one long-running process serves many clients and
+creates a fresh MCP server instance per request.
 
 ### Where does the server log?
 
-Always **stderr**. Stdout is reserved for MCP JSON-RPC traffic. To see
+Always to **stderr**; stdout is reserved for MCP JSON-RPC. To see the
 logs:
-- Claude Code: open the developer console (`/dev` in newer versions).
-- Claude Desktop: enable developer tools in settings.
-- HTTP mode: just watch the process output (`journalctl -u
-  action1-mcp`, etc.).
 
-Set `ACTION1_LOG_LEVEL=debug` for verbose traces.
+- Claude Code: start it with `claude --debug`.
+- Claude Desktop: the MCP log files in `~/Library/Logs/Claude/` (macOS)
+  or `%APPDATA%\Claude\logs` (Windows).
+- HTTP mode: the process output (`journalctl -u action1-mcp`, ...).
+
+Set `ACTION1_LOG_LEVEL=debug` for more detail.
 
 ### Can I run multiple instances at once?
 
-Yes. Each instance needs its own `.env` (or env vars) and, in HTTP
-mode, its own port. Useful for connecting two different Action1
-organizations to the same Claude session simultaneously — register them
-under different MCP names (`action1-prod`, `action1-staging`).
+Yes. Each instance needs its own environment and, in HTTP mode, its own
+port. This connects two Action1 organizations or credentials to the same
+host; register them under different names (`action1-prod`,
+`action1-staging`).
 
-### How do I update?
-
-```bash
-cd action1-mcp
-git pull
-npm install     # picks up dependency changes
-npm run build
-```
-
-Restart the MCP host. The tool list is reloaded on the next connect.
-
-If `tests/unit/specSha.test.ts` fails after the pull, the upstream
-Action1 spec changed and someone re-pinned it. Don't blindly
-auto-fix — read the commit history first.
-
-### How do I check the install worked?
-
-In your MCP host, ask Claude:
-
-> List my Action1 organizations.
-
-You should see your org. If you don't, walk through
-[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
-
-For a headless smoke:
+### How do I check the install worked without a chat?
 
 ```bash
-ACTION1_BASE_URL=... ACTION1_CLIENT_ID=... ACTION1_CLIENT_SECRET=... \
-  ACTION1_ORG_ID=... \
-  npx @modelcontextprotocol/inspector --cli node dist/index.js \
-    --method tools/list | jq '.tools | length'
-# expected: 166 (33 curated incl. 6 wrappers + 133 generated)
+npx -y @modelcontextprotocol/inspector@2.12.0 --cli \
+  node --env-file=.env dist/index.js --method tools/list | jq '.tools | length'
 ```
 
-### Can I disable the auto-generated tools and only use the curated ones?
+A non-zero number means the server starts and registers its tools.
 
-Not via configuration today. If you really want to, comment out
-`registerGeneratedTools(server, client)` in `src/server.ts` and
-rebuild — you keep the 33 curated tools (27 thematic + 6 workflow wrappers).
+### Can I hide the generated tools and only use the curated ones?
+
+Yes: `ACTION1_TOOLSETS=curated`. `ACTION1_TOOLSETS=read` keeps only
+read-only tools, and `curated,read` combines both.
 
 ### Can I add my own tools?
 
-Yes — see [`CONTRIBUTING.md`](CONTRIBUTING.md). Either fork or layer
-your own server that wraps this one's `Action1Client` directly.
+Yes, see [`CONTRIBUTING.md`](CONTRIBUTING.md). Either fork or build your
+own server around this one's `Action1Client`.
 
 ## Other resources
 
-- [`USAGE.md`](USAGE.md) — what each tool does.
-- [`EXAMPLES.md`](EXAMPLES.md) — copy-paste recipes.
-- [`FAQ.md`](FAQ.md) — broader Q&amp;A across topics.
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) — production hosting.
-- [`SECURITY.md`](SECURITY.md) — threat model + safeguards.
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — failure modes.
+- [`USAGE.md`](USAGE.md): what each tool does.
+- [`EXAMPLES.md`](EXAMPLES.md): copy-paste recipes.
+- [`FAQ.md`](FAQ.md): questions across topics.
+- [`DEPLOYMENT.md`](DEPLOYMENT.md): production hosting.
+- [`SECURITY.md`](SECURITY.md): threat model and safeguards.
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md): failure modes.

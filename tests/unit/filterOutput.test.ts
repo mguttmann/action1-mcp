@@ -45,7 +45,7 @@ describe("filterEndpointResultDetails", () => {
   // anchored regex keeps them.
   it("keeps a real script line that merely contains 'Completed' (anchor-match)", () => {
     // (a) Real script output like "Completed CVE remediation: 3 packages"
-    //     is kept — the marker is not at line start, it's followed by
+    //     is kept - the marker is not at line start, it's followed by
     //     more content with a non-colon character.
     const result = filterEndpointResultDetails([
       { description: "Completed CVE remediation: 3 packages" },
@@ -57,9 +57,7 @@ describe("filterEndpointResultDetails", () => {
   it("drops a canonical 'Completed: <details>' status line", () => {
     // (b) Action1 emits its terminal marker as "Completed: <summary>".
     //     The strict regex catches it.
-    const result = filterEndpointResultDetails([
-      { description: "Completed: 5 of 5" },
-    ]);
+    const result = filterEndpointResultDetails([{ description: "Completed: 5 of 5" }]);
     expect(result.output).toBe("");
     expect(result.skippedStatusLines).toBe(1);
   });
@@ -67,7 +65,7 @@ describe("filterEndpointResultDetails", () => {
   it("drops 'Waiting: queued' but keeps 'Waiting for kernel symbols'", () => {
     // (c) "Waiting:" is a status marker. "Waiting for kernel symbols"
     //     is a legit diagnostic line that happens to start with the
-    //     same word but is not followed by a colon — kept.
+    //     same word but is not followed by a colon - kept.
     const result = filterEndpointResultDetails([
       { description: "Waiting: queued" },
       { description: "Waiting for kernel symbols" },

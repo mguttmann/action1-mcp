@@ -60,7 +60,7 @@ describe("compactItem", () => {
       run_script_text: "Function Main { ".repeat(500),
       security_CVE: Array.from({ length: 200 }, (_, i) => `CVE-2026-${i}`).join(", "),
       description: "Lorem ipsum ".repeat(500),
-      name: "Mozilla Firefox", // short — must NOT be truncated
+      name: "Mozilla Firefox", // short - must NOT be truncated
     };
     const out = compactItem(item) as Record<string, unknown>;
     expect(String(out.run_script_text).length).toBeLessThan(500);
@@ -85,10 +85,7 @@ describe("compactItem", () => {
 
   it("recurses into nested arrays of objects", () => {
     const item = {
-      items: [
-        { run_script_text: "x".repeat(1000) },
-        { run_script_text: "y".repeat(1000) },
-      ],
+      items: [{ run_script_text: "x".repeat(1000) }, { run_script_text: "y".repeat(1000) }],
     };
     const out = compactItem(item) as Record<string, unknown>;
     const inner = out.items as Record<string, unknown>[];
@@ -104,15 +101,11 @@ describe("compactItem", () => {
     // truncation marker.
     const sample = {
       run_script_text: "Function Main { ".repeat(500),
-      security_CVE: Array.from({ length: 200 }, (_, i) => `CVE-2026-${i}`).join(
-        ", ",
-      ),
+      security_CVE: Array.from({ length: 200 }, (_, i) => `CVE-2026-${i}`).join(", "),
       description: "Lorem ipsum ".repeat(500),
       name: "Mozilla Firefox",
       id: "abc",
-      versions: [
-        { run_script_text: "x".repeat(5000) },
-      ],
+      versions: [{ run_script_text: "x".repeat(5000) }],
     };
     const onePass = compactItem(sample);
     const twoPass = compactItem(onePass);

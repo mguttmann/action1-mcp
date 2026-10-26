@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, resetConfigCache } from "../../src/config.js";
 
-// Pass-2 audit found that BASE_URL validation was a Pass-1 fix but
-// without tests. These pin the SSRF / metadata / non-https rejections
+// These pin the BASE_URL SSRF / metadata / non-https rejections
 // so a refactor can't silently weaken them.
 
 const REQUIRED = {
@@ -25,7 +24,7 @@ function setEnv(vars: Record<string, string | undefined>): void {
   resetConfigCache();
 }
 
-describe("config — BASE_URL validation", () => {
+describe("config - BASE_URL validation", () => {
   beforeEach(() => {
     Object.assign(process.env, REQUIRED);
   });
@@ -79,10 +78,10 @@ describe("config — BASE_URL validation", () => {
   });
 });
 
-// Pass-4 review: pin the MCP_HTTP_TOKEN edge-cases (whitespace-only,
+// Pin the MCP_HTTP_TOKEN edge-cases (whitespace-only,
 // trailing whitespace, mid-whitespace, too-short) so a refactor of the
 // refine+transform can't silently weaken the auth surface.
-describe("config — MCP_HTTP_TOKEN validation", () => {
+describe("config - MCP_HTTP_TOKEN validation", () => {
   beforeEach(() => {
     Object.assign(process.env, REQUIRED);
     process.env.ACTION1_BASE_URL = "https://app.eu.action1.com/api/3.0";
@@ -139,7 +138,7 @@ describe("config — MCP_HTTP_TOKEN validation", () => {
   });
 
   it("trims leading whitespace before length-check", () => {
-    // Pass-6 review: symmetric to the trailing-whitespace test —
+    // Symmetric to the trailing-whitespace test -
     // leading whitespace must also be stripped so a pasted token
     // doesn't get bitten by an invisible space.
     setEnv({
@@ -165,5 +164,33 @@ describe("config — MCP_HTTP_TOKEN validation", () => {
       ACTION1_BASE_URL: "https://app.eu.action1.com/api/3.0",
     });
     expect(loadConfig().http.token).toBeUndefined();
+  });
+});
+
+describe("config: request and token timeouts", () => {
+  const BASE = { ...REQUIRED, ACTION1_BASE_URL: "https://app.eu.action1.com/api/3.0" };
+  afterEach(() => {
+    delete process.env.ACTION1_REQUEST_TIMEOUT_MS;
+    delete process.env.ACTION1_TOKEN_TIMEOUT_MS;
+    setEnv({});
+  });
+
+  it("defaults to 60 s per request and 15 s per token attempt", () => {
+    setEnv({ ...BASE, ACTION1_REQUEST_TIMEOUT_MS: undefined, ACTION1_TOKEN_TIMEOUT_MS: undefined });
+    const cfg = loadConfig();
+    expect(cfg.requestTimeoutMs).toBe(60_000);
+    expect(cfg.tokenTimeoutMs).toBe(15_000);
+  });
+
+  it("reads ACTION1_REQUEST_TIMEOUT_MS and ACTION1_TOKEN_TIMEOUT_MS", () => {
+    setEnv({ ...BASE, ACTION1_REQUEST_TIMEOUT_MS: "120000", ACTION1_TOKEN_TIMEOUT_MS: "5000" });
+    const cfg = loadConfig();
+    expect(cfg.requestTimeoutMs).toBe(120_000);
+    expect(cfg.tokenTimeoutMs).toBe(5_000);
+  });
+
+  it.each(["0", "999", "600001", "30s", "-1"])("rejects ACTION1_REQUEST_TIMEOUT_MS=%j", (v) => {
+    setEnv({ ...BASE, ACTION1_REQUEST_TIMEOUT_MS: v });
+    expect(() => loadConfig()).toThrow(/ACTION1_REQUEST_TIMEOUT_MS/);
   });
 });

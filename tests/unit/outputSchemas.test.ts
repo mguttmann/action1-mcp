@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
 import {
   singleObjectOutputShape,
   okStatusOutputShape,
@@ -6,22 +7,17 @@ import {
   cursorListOutputShape,
 } from "../../src/tools/helpers.js";
 
-// Production-bug regression (Pass-3 audit miss):
-// `singleObjectOutputShape` was previously a ZodRawShape
-// `{ data: z.record(z.unknown()).optional() }`. Tools using it pass
-// arbitrary structuredContent (e.g. `{ total, by_status, by_platform }`),
-// which the SDK validator rejects with "data must NOT have additional
-// properties". The fix switches to a permissive ZodObject (.passthrough()).
+// Regression guard: a narrow `singleObjectOutputShape` such as the raw
+// shape `{ data: z.record(z.unknown()).optional() }` makes the SDK
+// validator reject arbitrary structuredContent (e.g. `{ total,
+// by_status, by_platform }`) with "data must NOT have additional
+// properties". It must be a permissive ZodObject (.passthrough()).
 //
 // These tests pin the contract so the bug can't sneak back in.
 
 describe("singleObjectOutputShape", () => {
-  it("is a ZodObject (required by SDK normalizeObjectSchema)", () => {
-    // The MCP SDK introspects outputSchema via `normalizeObjectSchema`,
-    // which expects either a raw shape (Record<string, ZodSchema>) or a
-    // ZodObject. A ZodRecord falls through and crashes the register path.
-    const def = (singleObjectOutputShape as unknown as { _def?: { typeName?: string } })._def;
-    expect(def?.typeName).toBe("ZodObject");
+  it("is a ZodObject (MCP outputSchema must be an object schema)", () => {
+    expect(singleObjectOutputShape).toBeInstanceOf(z.ZodObject);
   });
 
   it("accepts arbitrary properties (passthrough)", () => {
@@ -44,16 +40,13 @@ describe("singleObjectOutputShape", () => {
   });
 
   it("accepts the legacy { data: ... } shape too", () => {
-    expect(() =>
-      singleObjectOutputShape.parse({ data: { foo: "bar" } }),
-    ).not.toThrow();
+    expect(() => singleObjectOutputShape.parse({ data: { foo: "bar" } })).not.toThrow();
   });
 });
 
 describe("okStatusOutputShape", () => {
-  it("is a ZodObject (required by SDK normalizeObjectSchema)", () => {
-    const def = (okStatusOutputShape as unknown as { _def?: { typeName?: string } })._def;
-    expect(def?.typeName).toBe("ZodObject");
+  it("is a ZodObject (MCP outputSchema must be an object schema)", () => {
+    expect(okStatusOutputShape).toBeInstanceOf(z.ZodObject);
   });
 
   it("accepts the destructive-guard dry-run preview shape", () => {
@@ -82,22 +75,19 @@ describe("okStatusOutputShape", () => {
 });
 
 describe("listOutputShape and cursorListOutputShape", () => {
-  // After the Pass-3 hardening, both are full ZodObjects with
-  // .passthrough() — same fix class as singleObjectOutputShape.
+  // Both are full ZodObjects with .passthrough(), like
+  // singleObjectOutputShape.
   it("listOutputShape is a ZodObject (not a raw shape)", () => {
-    const def = (listOutputShape as unknown as { _def?: { typeName?: string } })._def;
-    expect(def?.typeName).toBe("ZodObject");
+    expect(listOutputShape).toBeInstanceOf(z.ZodObject);
   });
 
   it("listOutputShape accepts the cappedListResult payload", () => {
-    expect(() =>
-      listOutputShape.parse({ items: [{ a: 1 }], count: 1, total: 5 }),
-    ).not.toThrow();
+    expect(() => listOutputShape.parse({ items: [{ a: 1 }], count: 1, total: 5 })).not.toThrow();
   });
 
   it("listOutputShape passes through extra upstream-envelope keys", () => {
     // Action1 sometimes emits `next` or other envelope fields. The
-    // schema must not reject them — that's what passthrough is for.
+    // schema must not reject them - that's what passthrough is for.
     expect(() =>
       listOutputShape.parse({
         items: [{ a: 1 }],
@@ -110,15 +100,12 @@ describe("listOutputShape and cursorListOutputShape", () => {
 
   it("listOutputShape still rejects payloads missing `count`", () => {
     // The bug fix is about EXTRA keys, not relaxed required fields.
-    // `count` is still required — ensures runtime.ts always emits it.
-    expect(() =>
-      listOutputShape.parse({ items: [{ a: 1 }] }),
-    ).toThrow();
+    // `count` is still required - ensures runtime.ts always emits it.
+    expect(() => listOutputShape.parse({ items: [{ a: 1 }] })).toThrow();
   });
 
   it("cursorListOutputShape is a ZodObject (not a raw shape)", () => {
-    const def = (cursorListOutputShape as unknown as { _def?: { typeName?: string } })._def;
-    expect(def?.typeName).toBe("ZodObject");
+    expect(cursorListOutputShape).toBeInstanceOf(z.ZodObject);
   });
 
   it("cursorListOutputShape accepts the pagedListResult payload", () => {
@@ -148,10 +135,8 @@ describe("listOutputShape and cursorListOutputShape", () => {
   it("cursorListOutputShape accepts the non-cursor envelope (has_more/next_cursor optional)", () => {
     // Generated tools route through runtime.ts's direct path when
     // the caller doesn't pass `cursor` / `auto_paginate`. That path
-    // emits {items, count} only — has_more/next_cursor are absent.
+    // emits {items, count} only - has_more/next_cursor are absent.
     // The schema must tolerate both modes for the same tool.
-    expect(() =>
-      cursorListOutputShape.parse({ items: [{ a: 1 }], count: 1 }),
-    ).not.toThrow();
+    expect(() => cursorListOutputShape.parse({ items: [{ a: 1 }], count: 1 })).not.toThrow();
   });
 });

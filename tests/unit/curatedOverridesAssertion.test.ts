@@ -4,7 +4,7 @@ import {
   assertNameOverridesMatchSpec,
 } from "../../src/codegen/curated-overrides.js";
 
-// Pass-3 added a codegen-time guard that fails the build when a
+// The codegen-time guard fails the build when a
 // NAME_OVERRIDES key doesn't match a real operationId in the spec.
 // These tests pin both branches.
 
@@ -16,7 +16,7 @@ describe("assertNameOverridesMatchSpec", () => {
 
   it("throws with stale-keys message when an override key is missing", () => {
     const ops = new Set(Object.keys(NAME_OVERRIDES));
-    // Drop the first key — that simulates a typo or spec-rename.
+    // Drop the first key - that simulates a typo or spec-rename.
     const firstKey = Object.keys(NAME_OVERRIDES)[0]!;
     ops.delete(firstKey);
     expect(() => assertNameOverridesMatchSpec(ops)).toThrowError(/Stale NAME_OVERRIDES/);

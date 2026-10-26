@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Action1Client } from "../../client/action1Client.js";
 import { resolveOrgId } from "../../config.js";
-import { collect } from "../../client/pagination.js";
+import { collect, listPageFetcher, parsePageEnvelope } from "../../client/pagination.js";
 import {
   cursorInputShape,
   cursorListOutputShape,
@@ -13,11 +13,28 @@ import {
   orgIdShape,
   pagedListResult,
   runTool,
-  singleObjectOutputShape,
+  objectOutputShape,
 } from "../helpers.js";
-import { capItemList } from "../../utils/capOutput.js";
+import { capItemStream } from "../../utils/capOutput.js";
+import { sanitizeCsvFormulas } from "../../utils/csv.js";
+import { piiRedactionEnabled, redactPii } from "../../utils/pii.js";
 import { fingerprintQuery, pagedFetch } from "../../utils/cursor.js";
 import { Action1ApiError } from "../../client/errors.js";
+import {
+  auditEventView,
+  endpointGroupRef,
+  reportRef,
+  installedSoftwareName,
+  missingUpdateId,
+  scheduleInactive,
+  scheduleTargets,
+  scheduleTemplateIds,
+  vulnerabilityCveId,
+  vulnerabilityPackages,
+  vulnerableEndpointId,
+  type PackageCandidate,
+} from "../../spec/entities.js";
+import { action1TimeSchema, parseAction1Time, toAction1Time } from "../../spec/time.js";
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -60,13 +77,18 @@ function registerEndpointGroupsResolve(server: McpServer, client: Action1Client)
     "action1_endpoint_groups_resolve",
     {
       title: "Resolve endpoint group by name (fuzzy)",
-      description: "Look up an endpoint group by name or UUID using exact-id/exact-name/starts-with/contains.",
-      inputSchema: {
+      description:
+        "Look up an endpoint group by name or UUID using exact-id/exact-name/starts-with/contains.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         query: z.string().min(1).describe("Group name fragment or UUID."),
-      },
-      outputSchema: singleObjectOutputShape,
+      }),
+      outputSchema: objectOutputShape({
+        match_strategy: "string",
+        matches: "array",
+        total_groups: "number",
+      }),
       annotations: READONLY_ANNOTATIONS,
     },
     async ({ org_id, query, response_format }) =>
@@ -79,10 +101,8 @@ function registerEndpointGroupsResolve(server: McpServer, client: Action1Client)
           ),
         );
         const typed = groups
-          .filter((g): g is { id: string; name: string } =>
-            typeof g.id === "string" && typeof g.name === "string",
-          )
-          .map((g) => ({ id: g.id, name: g.name }));
+          .map(endpointGroupRef)
+          .filter((g): g is { id: string; name: string } => g !== undefined);
         const { matches, how } = fuzzyFind(typed, query);
         return jsonResult(
           { match_strategy: how, matches, total_groups: typed.length },
@@ -93,25 +113,20 @@ function registerEndpointGroupsResolve(server: McpServer, client: Action1Client)
   );
 }
 
-function registerSoftwareInventoryForEndpoint(
-  server: McpServer,
-  client: Action1Client,
-): void {
+function registerSoftwareInventoryForEndpoint(server: McpServer, client: Action1Client): void {
   server.registerTool(
     "action1_software_inventory_for_endpoint",
     {
       title: "List installed software for an endpoint",
-      description: "Fetch installed-software inventory for one endpoint, with optional name substring filter.",
-      inputSchema: {
+      description:
+        "Fetch installed-software inventory for one endpoint, with optional name substring filter.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...cursorInputShape,
         ...formatShape,
         endpoint_id: endpointIdSchema,
-        find_by_name: z
-          .string()
-          .optional()
-          .describe("Substring filter on application name."),
-      },
+        find_by_name: z.string().optional().describe("Substring filter on application name."),
+      }),
       outputSchema: cursorListOutputShape,
       annotations: READONLY_ANNOTATIONS,
     },
@@ -121,32 +136,26 @@ function registerSoftwareInventoryForEndpoint(
         const fp = fingerprintQuery({ orgId, endpoint_id, find_by_name: find_by_name ?? "" });
         const lc = find_by_name?.toLowerCase();
         const result = await pagedFetch<unknown>(
-          async ({ from, limit: pageLimit }) => {
-            const raw = (await client.request<unknown>(
-              "/installed-software/" +
-                encodeURIComponent(orgId) +
-                "/data/" +
-                encodeURIComponent(endpoint_id),
-              { query: { limit: pageLimit, from } },
-            )) as { items?: unknown[] } | unknown[];
-            const items = Array.isArray(raw) ? raw : (raw.items ?? []);
-            const filtered = lc
-              ? items.filter((it) => {
-                  if (!it || typeof it !== "object") return false;
-                  const obj = it as Record<string, unknown>;
-                  const name =
-                    (typeof obj.name === "string" ? obj.name : undefined) ??
-                    (typeof obj.display_name === "string" ? obj.display_name : undefined) ??
-                    (typeof obj.product_name === "string" ? obj.product_name : undefined);
-                  return name ? name.toLowerCase().includes(lc) : false;
-                })
-              : items;
-            return { items: filtered, hasMore: items.length === pageLimit };
-          },
+          listPageFetcher(
+            client,
+            "/installed-software/" +
+              encodeURIComponent(orgId) +
+              "/data/" +
+              encodeURIComponent(endpoint_id),
+          ),
           {
             ...(cursor !== undefined ? { cursor } : {}),
             fingerprint: fp,
             ...(limit !== undefined ? { maxItems: limit } : {}),
+            // Filter inside pagedFetch (not inside fetchPage) so the
+            // cursor tracks upstream positions and a filtered page does
+            // not end the walk after the first upstream page.
+            ...(lc
+              ? {
+                  filter: (it: unknown) =>
+                    installedSoftwareName(it)?.toLowerCase().includes(lc) ?? false,
+                }
+              : {}),
           },
         );
         return pagedListResult(result, response_format);
@@ -159,24 +168,16 @@ function registerRecurringSchedules(server: McpServer, client: Action1Client): v
     "action1_recurring_schedules",
     {
       title: "List recurring automation schedules (read)",
-      description: "List recurring automations with optional client-side filters (status, template_id, group id substring).",
-      inputSchema: {
+      description:
+        "List recurring automations with optional client-side filters (status, template_id, group id substring).",
+      inputSchema: z.object({
         ...orgIdShape,
         ...cursorInputShape,
         ...formatShape,
-        active_only: z
-          .boolean()
-          .optional()
-          .describe("Drop paused/disabled schedules."),
-        template_id: z
-          .string()
-          .optional()
-          .describe("Filter by first action template_id."),
-        group_id_substring: z
-          .string()
-          .optional()
-          .describe("Filter by target group id substring."),
-      },
+        active_only: z.boolean().optional().describe("Drop paused/disabled schedules."),
+        template_id: z.string().optional().describe("Filter by first action template_id."),
+        group_id_substring: z.string().optional().describe("Filter by target group id substring."),
+      }),
       outputSchema: cursorListOutputShape,
       annotations: READONLY_ANNOTATIONS,
     },
@@ -199,46 +200,23 @@ function registerRecurringSchedules(server: McpServer, client: Action1Client): v
         });
         const matchesFilters = (it: unknown): boolean => {
           if (!it || typeof it !== "object") return false;
-          const obj = it as Record<string, unknown>;
-          if (active_only) {
-            const status =
-              typeof obj.status === "string"
-                ? obj.status
-                : typeof obj.settings === "string"
-                  ? obj.settings
-                  : undefined;
-            if (status && /(paused|disabled|stopped)/i.test(status)) return false;
-          }
-          if (template_id) {
-            const actions = obj.actions as Array<Record<string, unknown>> | undefined;
-            const ids = (actions ?? []).map((a) => a.template_id);
-            if (!ids.includes(template_id)) return false;
-          }
+          if (active_only && scheduleInactive(it)) return false;
+          if (template_id && !scheduleTemplateIds(it).includes(template_id)) return false;
           if (group_id_substring) {
-            const eps = obj.endpoints as Array<Record<string, unknown>> | undefined;
-            const matches = (eps ?? []).some(
-              (e) =>
-                typeof e.id === "string" &&
-                e.id.includes(group_id_substring) &&
-                e.type === "EndpointGroup",
+            const matches = scheduleTargets(it).some(
+              (t) => t.id.includes(group_id_substring) && t.type === "EndpointGroup",
             );
             if (!matches) return false;
           }
           return true;
         };
         const result = await pagedFetch<unknown>(
-          async ({ from, limit: pageLimit }) => {
-            const raw = (await client.request<unknown>(
-              "/automations/schedules/" + encodeURIComponent(orgId),
-              { query: { limit: pageLimit, from } },
-            )) as { items?: unknown[] } | unknown[];
-            const items = Array.isArray(raw) ? raw : (raw.items ?? []);
-            return { items: items.filter(matchesFilters), hasMore: items.length === pageLimit };
-          },
+          listPageFetcher(client, "/automations/schedules/" + encodeURIComponent(orgId)),
           {
             ...(cursor !== undefined ? { cursor } : {}),
             fingerprint: fp,
             ...(limit !== undefined ? { maxItems: limit } : {}),
+            filter: matchesFilters,
           },
         );
         return pagedListResult(result, response_format);
@@ -246,38 +224,40 @@ function registerRecurringSchedules(server: McpServer, client: Action1Client): v
   );
 }
 
+/**
+ * Most upstream pages one action1_audit_log_search call scans. A narrow
+ * filter over a long audit log otherwise walks the whole log in one
+ * call; past this bound the call returns `has_more: true` and a cursor
+ * that continues the scan.
+ */
+export const AUDIT_SEARCH_MAX_PAGES = 10;
+
 function registerAuditLogSearch(server: McpServer, client: Action1Client): void {
   server.registerTool(
     "action1_audit_log_search",
     {
       title: "Search the audit log",
-      description: "Search /audit/events with optional time range and client-side substring filters.",
-      inputSchema: {
+      description:
+        "Search /audit/events with an optional time window (sent to Action1 as timefrom/timeto) and case-insensitive substring filters on user, event and object.",
+      inputSchema: z.object({
         ...cursorInputShape,
         ...formatShape,
-        from_time: z
-          .string()
-          .datetime()
+        from_time: action1TimeSchema
           .optional()
-          .describe("ISO-8601 lower bound."),
-        to_time: z
-          .string()
-          .datetime()
+          .describe("Lower bound: YYYY-MM-DD_HH-MM-SS (UTC) or ISO-8601."),
+        to_time: action1TimeSchema
           .optional()
-          .describe("ISO-8601 upper bound."),
-        user_substring: z
-          .string()
-          .optional()
-          .describe("Filter by user."),
+          .describe("Upper bound: YYYY-MM-DD_HH-MM-SS (UTC) or ISO-8601."),
+        user_substring: z.string().optional().describe("Filter by user name."),
         event_type_substring: z
           .string()
           .optional()
-          .describe("Filter by event_type."),
+          .describe("Filter by event name (e.g. Login, View Report, POST)."),
         target_substring: z
           .string()
           .optional()
-          .describe("Filter by target."),
-      },
+          .describe("Filter by affected object (name, URL or description)."),
+      }),
       outputSchema: cursorListOutputShape,
       annotations: READONLY_ANNOTATIONS,
     },
@@ -290,78 +270,62 @@ function registerAuditLogSearch(server: McpServer, client: Action1Client): void 
           event_type_substring: args.event_type_substring ?? "",
           target_substring: args.target_substring ?? "",
         });
-        const fromMs = args.from_time ? Date.parse(args.from_time) : undefined;
-        const toMs = args.to_time ? Date.parse(args.to_time) : undefined;
+        const fromMs = args.from_time ? parseAction1Time(args.from_time) : undefined;
+        const toMs = args.to_time ? parseAction1Time(args.to_time) : undefined;
         const timeFilterActive = fromMs !== undefined || toMs !== undefined;
+        // The window also goes upstream in the documented format, so
+        // Action1 can skip the rest of the log; the local check below
+        // stays in case the server ignores it.
+        const upstream: Record<string, string> = {};
+        const timefrom = args.from_time ? toAction1Time(args.from_time) : undefined;
+        const timeto = args.to_time ? toAction1Time(args.to_time) : undefined;
+        if (timefrom) upstream.timefrom = timefrom;
+        if (timeto) upstream.timeto = timeto;
         const userLc = args.user_substring?.toLowerCase();
         const typeLc = args.event_type_substring?.toLowerCase();
         const targetLc = args.target_substring?.toLowerCase();
-        // Pass-N audit: when a time filter is active and a record's
-        // timestamp is unparseable, the previous implementation let it
-        // through (`!Number.isNaN(ts) && ts < fromMs` short-circuited
-        // to "no match" on NaN). That meant unparseable items bypassed
-        // the time window silently. We now drop them AND surface a
-        // counter so the agent can detect upstream timestamp regressions.
+        const matches = (values: string[], lc: string | undefined): boolean =>
+          !lc || values.some((v) => v.toLowerCase().includes(lc));
+        // When a time filter is active, a record whose timestamp cannot
+        // be parsed cannot be placed inside or outside the window. It is
+        // dropped and counted, so the agent can see that upstream
+        // timestamps changed format instead of getting it silently
+        // included or excluded.
         let droppedUnparseableTimestamps = 0;
         const matchesFilters = (it: unknown): boolean => {
           if (!it || typeof it !== "object") return false;
-          const obj = it as Record<string, unknown>;
-          const ts =
-            typeof obj.time === "string"
-              ? Date.parse(obj.time)
-              : typeof obj.timestamp === "string"
-                ? Date.parse(obj.timestamp)
-                : NaN;
-          if (timeFilterActive && Number.isNaN(ts)) {
+          const ev = auditEventView(it);
+          const ts = ev.timestamp !== undefined ? parseAction1Time(ev.timestamp) : undefined;
+          if (timeFilterActive && ts === undefined) {
             droppedUnparseableTimestamps += 1;
             return false;
           }
-          if (fromMs !== undefined && ts < fromMs) return false;
-          if (toMs !== undefined && ts > toMs) return false;
-          const matchString = (key: string, lc: string | undefined): boolean => {
-            if (!lc) return true;
-            const v = obj[key];
-            return typeof v === "string" && v.toLowerCase().includes(lc);
-          };
-          if (!matchString("user", userLc)) return false;
-          if (!matchString("event_type", typeLc)) return false;
-          if (!matchString("target", targetLc)) return false;
-          return true;
+          if (fromMs !== undefined && ts !== undefined && ts < fromMs) return false;
+          if (toMs !== undefined && ts !== undefined && ts > toMs) return false;
+          return (
+            matches(ev.users, userLc) && matches(ev.events, typeLc) && matches(ev.targets, targetLc)
+          );
         };
         const result = await pagedFetch<unknown>(
-          async ({ from, limit: pageLimit }) => {
-            const raw = (await client.request<unknown>("/audit/events", {
-              query: { limit: pageLimit, from },
-            })) as { items?: unknown[] } | unknown[];
-            const items = Array.isArray(raw) ? raw : (raw.items ?? []);
-            return { items: items.filter(matchesFilters), hasMore: items.length === pageLimit };
-          },
+          listPageFetcher(client, "/audit/events", upstream),
           {
             ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
             fingerprint: fp,
             ...(args.limit !== undefined ? { maxItems: args.limit } : {}),
+            filter: matchesFilters,
+            maxPages: AUDIT_SEARCH_MAX_PAGES,
           },
         );
-        const base = pagedListResult(result, args.response_format);
-        if (droppedUnparseableTimestamps > 0 && base.structuredContent) {
-          // Surface the drop-counter both in structuredContent (where
-          // schema-aware hosts inspect it) and in the text block (so
-          // non-structured hosts still see it). The pagedListResult
-          // already serialised the text block, so we re-serialise from
-          // the patched structuredContent to keep both in sync.
-          const sc = base.structuredContent as Record<string, unknown>;
-          sc.dropped_unparseable_timestamps = droppedUnparseableTimestamps;
-          const first = base.content?.[0];
-          if (first && first.type === "text") {
-            // Best-effort: re-emit a JSON serialisation of the patched
-            // structured payload. For markdown output the patched
-            // counter ends up as a JSON dump instead of a table; that's
-            // a deliberate trade-off — the counter is a fault-detection
-            // signal that takes precedence over rendering polish.
-            first.text = JSON.stringify(sc);
-          }
-        }
-        return base;
+        // The drop counter is a fault-detection signal: it goes into both
+        // channels (the Markdown renderer prints every top-level field).
+        return pagedListResult(
+          result,
+          args.response_format,
+          undefined,
+          droppedUnparseableTimestamps > 0
+            ? { dropped_unparseable_timestamps: droppedUnparseableTimestamps }
+            : undefined,
+        );
       }),
   );
 }
@@ -372,14 +336,11 @@ function registerReportExport(server: McpServer, client: Action1Client): void {
     {
       title: "Run a report and return its data or CSV export",
       description: "Resolve a report by name or UUID, then return JSON rows or a CSV export blob.",
-      inputSchema: {
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         report: z.string().min(1).describe("Report id or name fragment."),
-        format: z
-          .enum(["json", "csv"])
-          .default("json")
-          .describe("'json' rows or 'csv' blob."),
+        format: z.enum(["json", "csv"]).default("json").describe("'json' rows or 'csv' blob."),
         limit: z
           .number()
           .int()
@@ -387,8 +348,17 @@ function registerReportExport(server: McpServer, client: Action1Client): void {
           .max(5000)
           .optional()
           .describe("Max rows when format='json'."),
-      },
-      outputSchema: singleObjectOutputShape,
+      }),
+      outputSchema: objectOutputShape({
+        format: "string",
+        report_id: "string",
+        items: "array",
+        count: "number",
+        total: "number",
+        truncated: "number | boolean",
+        content: "string",
+        note: "string",
+      }),
       annotations: READONLY_ANNOTATIONS,
     },
     async ({ org_id, report, format, limit, response_format }) =>
@@ -398,11 +368,8 @@ function registerReportExport(server: McpServer, client: Action1Client): void {
         if (!UUID_RE.test(report)) {
           const reports = await collect(client.paginate<unknown>("/reports/all", { limit: 100 }));
           const typed = reports
-            .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === "object")
-            .filter((r): r is { id: string; name: string } & Record<string, unknown> =>
-              typeof r.id === "string" && typeof r.name === "string",
-            )
-            .map((r) => ({ id: r.id, name: r.name }));
+            .map(reportRef)
+            .filter((r): r is { id: string; name: string } => r !== undefined);
           const { matches, how } = fuzzyFind(typed, report);
           if (matches.length === 0) {
             return errorResult(
@@ -418,9 +385,19 @@ function registerReportExport(server: McpServer, client: Action1Client): void {
         }
         if (format === "csv") {
           const data = await client.request<unknown>(
-            "/reportdata/" + encodeURIComponent(orgId) + "/" + encodeURIComponent(reportId) + "/export",
+            "/reportdata/" +
+              encodeURIComponent(orgId) +
+              "/" +
+              encodeURIComponent(reportId) +
+              "/export",
           );
-          const csvTextRaw = typeof data === "string" ? data : JSON.stringify(data);
+          // A text body is masked by the client under ACTION1_REDACT_PII;
+          // a JSON body is masked here, since jsonResult cannot see into
+          // the serialised string.
+          const csvTextRaw =
+            typeof data === "string"
+              ? data
+              : JSON.stringify(piiRedactionEnabled() ? redactPii(data) : data);
           // CSV-injection defence: cells starting with `=`, `+`, `-`, `@`,
           // tab, or carriage-return are interpreted as formulas by Excel
           // and other spreadsheets. Prefix them with a single quote so
@@ -450,13 +427,19 @@ function registerReportExport(server: McpServer, client: Action1Client): void {
             response_format,
           );
         }
-        const items = await collect(
+        // Stream the rows: only what fits the budget is kept in memory,
+        // the rest is counted so `total` stays exact.
+        const cap = await capItemStream(
           client.paginate<unknown>(
-            "/reportdata/" + encodeURIComponent(orgId) + "/" + encodeURIComponent(reportId) + "/data",
+            "/reportdata/" +
+              encodeURIComponent(orgId) +
+              "/" +
+              encodeURIComponent(reportId) +
+              "/data",
             { limit: 200, ...(limit !== undefined ? { maxItems: limit } : {}) },
           ),
+          { project: (row) => row },
         );
-        const cap = capItemList(items as Record<string, unknown>[]);
         const payload: Record<string, unknown> = {
           format: "json",
           report_id: reportId,
@@ -464,36 +447,70 @@ function registerReportExport(server: McpServer, client: Action1Client): void {
           count: cap.returned,
           total: cap.total,
         };
+        const notes: string[] = [];
         if (cap.truncated > 0) {
           payload.truncated = cap.truncated;
-          payload.note =
-            "Output truncated to fit the 1 MB host limit. Use format='csv' for a single string export, or pass `limit` for a smaller subset.";
+          notes.push(
+            "Output truncated to fit the 1 MB host limit. Use format='csv' for a single string export, or pass `limit` for a smaller subset.",
+          );
         }
+        if (cap.note !== undefined) notes.push(cap.note);
+        if (notes.length > 0) payload.note = notes.join(" ");
         return jsonResult(payload, payload, response_format);
       }),
   );
 }
+
+type Correlation = "cve" | "endpoint_missing_updates";
+
+interface PlanEntry {
+  cve: string;
+  affected_endpoints: string[];
+  candidate_packages: { id: string; version?: string; source: string }[];
+  /**
+   * How candidate_packages were found: `cve` = the updates Action1 lists
+   * as fixing this CVE (`software[].available_updates`);
+   * `endpoint_missing_updates` = no CVE-specific update was listed, so
+   * these are all missing updates of the affected endpoints.
+   */
+  correlation: Correlation;
+}
+
+const dedupePackages = (pkgs: PackageCandidate[]): PackageCandidate[] => {
+  const seen = new Map<string, PackageCandidate>();
+  for (const p of pkgs) if (!seen.has(p.id)) seen.set(p.id, p);
+  return [...seen.values()];
+};
+
+/**
+ * Most endpoint ids one CVE plan entry lists (about 200 KB of ids, within
+ * the response budget); the walk itself counts all of them.
+ */
+const AFFECTED_ENDPOINTS_CAP = 5000;
+
+const is403or404 = (err: unknown): err is Action1ApiError =>
+  err instanceof Action1ApiError && (err.status === 403 || err.status === 404);
 
 function registerCveRemediationPlan(server: McpServer, client: Action1Client): void {
   server.registerTool(
     "action1_cve_remediation_plan",
     {
       title: "Build a remediation plan for a CVE or an endpoint (read-only)",
-      description: "Read-only correlation of vulnerabilities and missing updates. Does NOT execute; pass the result to action1_deploy_update.",
-      inputSchema: {
+      description:
+        "Read-only correlation of vulnerabilities and the updates that fix them. Does NOT execute; pass the result to action1_deploy_update.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         cve_id: z.string().optional().describe("Plan for one CVE id."),
         endpoint_id: endpointIdSchema.optional().describe("Plan for one endpoint."),
-        max_items: z
-          .number()
-          .int()
-          .min(1)
-          .max(500)
-          .default(50)
-          .describe("Max plan entries."),
-      },
-      outputSchema: singleObjectOutputShape,
+        max_items: z.number().int().min(1).max(500).default(50).describe("Max plan entries."),
+      }),
+      outputSchema: objectOutputShape({
+        plan: "array",
+        count: "number",
+        truncated: "boolean",
+        warning: "string",
+      }),
       annotations: READONLY_ANNOTATIONS,
     },
     async ({ org_id, cve_id, endpoint_id, max_items, response_format }) =>
@@ -502,221 +519,198 @@ function registerCveRemediationPlan(server: McpServer, client: Action1Client): v
         if (!cve_id && !endpoint_id) {
           return errorResult("Pass either cve_id or endpoint_id.");
         }
-        const plan: {
-          cve: string;
-          affected_endpoints: string[];
-          candidate_packages: { id: string; source: string }[];
-        }[] = [];
+        const plan: PlanEntry[] = [];
+        const warnings: string[] = [];
+        let truncated = false;
+        const candidates = new CandidatePackages(client, orgId);
+        const entry = async (
+          cve: string,
+          affected: string[],
+          fixes: PackageCandidate[],
+        ): Promise<PlanEntry> => {
+          if (fixes.length > 0) {
+            return {
+              cve,
+              affected_endpoints: affected,
+              candidate_packages: dedupePackages(fixes).map((p) => ({ ...p, source: "cve" })),
+              correlation: "cve",
+            };
+          }
+          return {
+            cve,
+            affected_endpoints: affected,
+            candidate_packages: await candidates.forEndpoints(affected.slice(0, 10)),
+            correlation: "endpoint_missing_updates",
+          };
+        };
 
         if (cve_id) {
-          const epList = await collect(
-            client.paginate<unknown>(
-              "/vulnerabilities/" +
-                encodeURIComponent(orgId) +
-                "/" +
-                encodeURIComponent(cve_id) +
-                "/endpoints",
-              { limit: 200, maxItems: max_items },
-            ),
-          );
-          const affected = epList
-            .map((e) => (e && typeof e === "object" ? (e as Record<string, unknown>).id : undefined))
-            .filter((v): v is string => typeof v === "string");
-          const packages = await collectCandidatePackages(client, orgId, affected.slice(0, 10));
-          plan.push({ cve: cve_id, affected_endpoints: affected, candidate_packages: packages });
-        }
-
-        let vulnerabilitiesWarning: string | undefined;
-        if (endpoint_id) {
-          // Only swallow auth/missing-endpoint errors (403 / 404) and
-          // surface them as a warning. Other errors (5xx, network,
-          // schema mismatches) need to bubble up — the previous
-          // blanket `.catch(() => ({ items: [] }))` made a 403 visually
-          // indistinguishable from "no vulns" and caused the agent to
-          // emit an empty plan for an endpoint it actually couldn't
-          // read. The agent then concluded "nothing to do" when the
-          // real problem was a credential scope.
-          let vulnsRaw: { items?: unknown[] } = { items: [] };
-          try {
-            vulnsRaw = await client.request<{ items?: unknown[] }>(
-              "/endpoints/managed/" +
-                encodeURIComponent(orgId) +
-                "/" +
-                encodeURIComponent(endpoint_id) +
-                "/vulnerabilities",
+          const cvePath =
+            "/vulnerabilities/" + encodeURIComponent(orgId) + "/" + encodeURIComponent(cve_id);
+          // Every affected endpoint is walked: max_items counts plan
+          // entries, and the cve_id path has one. Only the id list kept
+          // for the output is bounded, and saying so is part of it.
+          const affected: string[] = [];
+          let affectedTotal = 0;
+          let fixes: PackageCandidate[] = [];
+          for await (const row of client.paginate<unknown>(cvePath + "/endpoints", {
+            limit: 200,
+          })) {
+            fixes = dedupePackages([...fixes, ...vulnerabilityPackages(row)]);
+            const id = vulnerableEndpointId(row);
+            if (typeof id !== "string") continue;
+            affectedTotal += 1;
+            if (affected.length < AFFECTED_ENDPOINTS_CAP) affected.push(id);
+          }
+          if (affectedTotal > affected.length) {
+            truncated = true;
+            warnings.push(
+              `affected_endpoints lists the first ${affected.length} of ${affectedTotal} affected endpoints; the plan does not cover the rest`,
             );
-          } catch (err) {
-            if (
-              err instanceof Action1ApiError &&
-              (err.status === 403 || err.status === 404)
-            ) {
-              vulnerabilitiesWarning = `vulnerabilities endpoint returned ${err.status}; plan may be incomplete`;
-              vulnsRaw = { items: [] };
-            } else {
-              throw err;
+          }
+          if (fixes.length === 0 && affected.length > 0) {
+            // The endpoint rows carry no update list: ask the CVE itself.
+            try {
+              fixes = vulnerabilityPackages(await client.request<unknown>(cvePath));
+            } catch (err) {
+              if (!is403or404(err)) throw err;
+              warnings.push(
+                `vulnerability ${cve_id} returned ${err.status}; plan may be incomplete`,
+              );
             }
           }
-          const cveIds = (vulnsRaw.items ?? [])
-            .map((v) =>
-              v && typeof v === "object" ? (v as Record<string, unknown>).cve_id : undefined,
-            )
-            .filter((v): v is string => typeof v === "string")
-            .slice(0, max_items);
-          for (const cve of cveIds) {
-            const packages = await collectCandidatePackages(client, orgId, [endpoint_id]);
-            plan.push({
-              cve,
-              affected_endpoints: [endpoint_id],
-              candidate_packages: packages,
-            });
+          plan.push(await entry(cve_id, affected, fixes));
+        }
+
+        if (endpoint_id) {
+          // Only 403 / 404 become a warning. Other errors (5xx, network,
+          // schema mismatches) bubble up: an empty result for a 403 would
+          // be indistinguishable from "no vulns", and the agent would
+          // conclude "nothing to do" when the real problem is a
+          // credential scope.
+          let vulns: unknown[] = [];
+          try {
+            // One more than max_items tells whether the list goes on.
+            vulns = await endpointVulnerabilities(client, orgId, endpoint_id, max_items + 1);
+          } catch (err) {
+            if (!is403or404(err)) throw err;
+            warnings.push(
+              `vulnerabilities endpoint returned ${err.status}; plan may be incomplete`,
+            );
+          }
+          if (vulns.length > max_items) {
+            truncated = true;
+            warnings.push(
+              `the endpoint has more than max_items (${max_items}) vulnerabilities; the plan covers the first ${max_items}, raise max_items for the rest`,
+            );
+          }
+          for (const v of vulns.slice(0, max_items)) {
+            const cve = vulnerabilityCveId(v);
+            if (cve === undefined) continue;
+            plan.push(await entry(cve, [endpoint_id], vulnerabilityPackages(v)));
           }
         }
 
         const note =
-          "Read-only output. To act, pass candidate_packages[*].id to action1_deploy_update with confirm: 'YES' and dry_run: false.";
-        const payload: Record<string, unknown> = { plan, note };
-        const structured: Record<string, unknown> = { plan, count: plan.length };
-        if (vulnerabilitiesWarning !== undefined) {
-          payload.warning = vulnerabilitiesWarning;
-          structured.warning = vulnerabilitiesWarning;
+          "Read-only output. To act, pass candidate_packages[*].id (and version, when given) to action1_deploy_update with confirm: 'YES' and dry_run: false. Entries with correlation 'endpoint_missing_updates' list every missing update of the endpoint, not only fixes for this CVE.";
+        const payload: Record<string, unknown> = { plan, note, truncated };
+        const structured: Record<string, unknown> = { plan, count: plan.length, truncated };
+        warnings.push(...candidates.warnings);
+        if (warnings.length > 0) {
+          payload.warning = warnings.join("; ");
+          structured.warning = payload.warning;
         }
         return jsonResult(payload, structured, response_format);
       }),
   );
 }
 
-async function collectCandidatePackages(
+/**
+ * Vulnerabilities of one endpoint from the documented
+ * `GET /vulnerabilities/{orgId}?endpoint_id=`. When that answers 404,
+ * the older per-endpoint path (not in the spec, see docs/GOTCHAS.md) is
+ * tried once.
+ */
+async function endpointVulnerabilities(
   client: Action1Client,
   orgId: string,
-  endpointIds: string[],
-): Promise<{ id: string; source: string }[]> {
-  const seen = new Map<string, { id: string; source: string }>();
-  for (const ep of endpointIds.slice(0, 5)) {
+  endpointId: string,
+  maxItems: number,
+): Promise<unknown[]> {
+  try {
+    return await collect(
+      client.paginate<unknown>("/vulnerabilities/" + encodeURIComponent(orgId), {
+        limit: 200,
+        maxItems,
+        query: { endpoint_id: endpointId },
+      }),
+    );
+  } catch (err) {
+    if (!(err instanceof Action1ApiError && err.status === 404)) throw err;
+  }
+  const legacy = await client.request<unknown>(
+    "/endpoints/managed/" +
+      encodeURIComponent(orgId) +
+      "/" +
+      encodeURIComponent(endpointId) +
+      "/vulnerabilities",
+  );
+  return parsePageEnvelope<unknown>(legacy).items;
+}
+
+/**
+ * Missing-update lookups for the remediation plan, cached per endpoint
+ * (the endpoint path asks once per CVE for the same endpoint). Only a
+ * 403 / 404 becomes a warning in the plan; every other failure (5xx,
+ * network, 401) propagates, so an unreadable endpoint is never shown as
+ * "no candidate packages".
+ */
+class CandidatePackages {
+  readonly warnings: string[] = [];
+  private readonly cache = new Map<string, unknown[]>();
+
+  constructor(
+    private readonly client: Action1Client,
+    private readonly orgId: string,
+  ) {}
+
+  async forEndpoints(endpointIds: string[]): Promise<{ id: string; source: string }[]> {
+    const seen = new Map<string, { id: string; source: string }>();
+    for (const ep of endpointIds.slice(0, 5)) {
+      for (const u of await this.missingUpdates(ep)) {
+        const id = missingUpdateId(u);
+        if (id !== undefined && !seen.has(id)) seen.set(id, { id, source: ep });
+      }
+    }
+    return [...seen.values()];
+  }
+
+  private async missingUpdates(ep: string): Promise<unknown[]> {
+    const cached = this.cache.get(ep);
+    if (cached) return cached;
+    let updates: unknown[];
     try {
-      const updates = await collect(
-        client.paginate<unknown>(
+      updates = await collect(
+        this.client.paginate<unknown>(
           "/endpoints/managed/" +
-            encodeURIComponent(orgId) +
+            encodeURIComponent(this.orgId) +
             "/" +
             encodeURIComponent(ep) +
             "/missing-updates",
           { limit: 100, maxItems: 100 },
         ),
       );
-      for (const u of updates) {
-        if (u && typeof u === "object") {
-          const obj = u as Record<string, unknown>;
-          if (typeof obj.id === "string" && !seen.has(obj.id)) {
-            seen.set(obj.id, { id: obj.id, source: ep });
-          }
-        }
-      }
-    } catch {
-      // best-effort
-    }
-  }
-  return [...seen.values()];
-}
-
-/**
- * Defuse Excel / spreadsheet formula-injection in a CSV blob. Any cell
- * whose first non-whitespace character is one of `= + - @ TAB CR` is
- * interpreted as a formula by Excel, Google Sheets, etc. Prefixing
- * with a single quote (`'`) is the conventional CSV-injection defence
- * — Excel honours it as a literal-text marker on import.
- *
- * Implementation notes:
- *   - Pass-2 audit found: `"  =cmd|x"` (leading whitespace) bypassed
- *     the original `^[=+\-@\t\r]` regex because Excel ignores leading
- *     whitespace before formula chars. Same for NBSP and other
- *     Unicode whitespace. We now check the trimmed content.
- *   - Pass-2 audit also found: `-100` and `+44 1234` were flagged as
- *     formulas, corrupting valid numeric / phone data. We restrict
- *     `+`/`-` triggering to cases where the *next* char is also a
- *     formula-trigger (`=`, `+`, etc.) or a function-name letter, not
- *     a digit. Negative numbers and phone numbers therefore pass
- *     through unchanged.
- *   - RFC-4180 quoting is partially supported: a leading `"` opens a
- *     quoted cell that may contain commas. We do a slightly smarter
- *     split that respects quotes; full embedded-CRLF handling is out
- *     of scope (Action1's exports are line-oriented).
- */
-export function sanitizeCsvFormulas(csv: string): string {
-  if (!csv) return csv;
-  return csv
-    .split("\n")
-    .map((line) => splitCsvLineRespectingQuotes(line).map(sanitizeCell).join(","))
-    .join("\n");
-}
-
-const FORMULA_HAZARD_FIRST = /[=@\t\r]/;
-const FORMULA_HAZARD_PLUS_MINUS = /[+\-]/;
-
-function isHazardousCell(inner: string): boolean {
-  // Trim leading whitespace (incl. NBSP / ZWSP / RTL marks).
-  const trimmed = inner.replace(/^[\s ​‎‏]+/, "");
-  if (!trimmed) return false;
-  // Pass-3 audit: an embedded CR / LF followed by a formula-trigger
-  // can be re-interpreted by Excel as a soft-newline that starts a
-  // fresh formula — flag even when the first char is benign.
-  if (/[\r\n][=+\-@]/.test(trimmed)) return true;
-  const first = trimmed.charAt(0);
-  if (FORMULA_HAZARD_FIRST.test(first)) return true;
-  if (FORMULA_HAZARD_PLUS_MINUS.test(first)) {
-    // `+`/`-` is hazardous only if it isn't followed by a digit /
-    // dot / space (numeric / phone-number pattern). I.e.
-    // `+cmd`/`-=cmd`/`-+1` are formulas; `+44`/`-100`/`-1.5e3`/`+ 7`
-    // are data.
-    const next = trimmed.charAt(1);
-    return Boolean(next) && !/[0-9. ]/.test(next);
-  }
-  return false;
-}
-
-function sanitizeCell(cell: string): string {
-  if (!cell) return cell;
-  const isQuoted = cell.length >= 2 && cell.startsWith('"') && cell.endsWith('"');
-  const inner = isQuoted ? cell.slice(1, -1) : cell;
-  if (isHazardousCell(inner)) {
-    const safe = "'" + inner;
-    return isQuoted ? `"${safe}"` : safe;
-  }
-  return cell;
-}
-
-/**
- * Split a CSV line on commas while respecting double-quoted cells. A
- * `""` inside a quoted cell is the RFC-4180 escape for a literal `"`.
- * This is intentionally simpler than a full CSV parser — embedded
- * CRLF is not handled, but Action1's exports never contain it in
- * practice.
- */
-function splitCsvLineRespectingQuotes(line: string): string[] {
-  const cells: string[] = [];
-  let current = "";
-  let inQuote = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const c = line.charAt(i);
-    if (inQuote) {
-      if (c === '"' && line.charAt(i + 1) === '"') {
-        current += '""';
-        i += 1;
-      } else if (c === '"') {
-        inQuote = false;
-        current += c;
+    } catch (err) {
+      if (is403or404(err)) {
+        this.warnings.push(
+          `missing-updates for endpoint ${ep} returned ${err.status}; candidate_packages may be incomplete`,
+        );
+        updates = [];
       } else {
-        current += c;
+        throw err;
       }
-    } else if (c === '"') {
-      inQuote = true;
-      current += c;
-    } else if (c === ",") {
-      cells.push(current);
-      current = "";
-    } else {
-      current += c;
     }
+    this.cache.set(ep, updates);
+    return updates;
   }
-  cells.push(current);
-  return cells;
 }

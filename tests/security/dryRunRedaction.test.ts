@@ -13,7 +13,7 @@ import { resetConfigCache } from "../../src/config.js";
 // that forgets to route `ctx.preview.body` through `redact()` fails
 // loudly instead of silently shipping a secret-leak.
 
-describe("destructiveGuard — dry_run preview redaction", () => {
+describe("destructiveGuard: dry_run preview redaction", () => {
   let oldEnv: string | undefined;
   let oldAuto: string | undefined;
 
@@ -21,8 +21,8 @@ describe("destructiveGuard — dry_run preview redaction", () => {
     // destructiveGuard now reads ACTION1_DESTRUCTIVE_AUTO_CONFIRM via
     // loadConfig() which Zod-validates the full env. Provide the
     // required Action1 client env vars so the cached config can build.
-    // We don't make any real HTTP calls — these tests only exercise
-    // the in-process dry-run branch — but the config still has to
+    // We don't make any real HTTP calls (these tests only exercise
+    // the in-process dry-run branch), but the config still has to
     // parse.
     process.env.ACTION1_BASE_URL = "https://app.eu.action1.test/api/3.0";
     process.env.ACTION1_CLIENT_ID = "x";
@@ -65,7 +65,7 @@ describe("destructiveGuard — dry_run preview redaction", () => {
     const wouldSend = sc.would_send as { body?: Record<string, unknown> };
     expect(wouldSend.body?.authorization).toBe("[REDACTED]");
 
-    // Cross-check the text content too — the LLM sees that, not the
+    // Cross-check the text content too: the LLM sees that, not the
     // structuredContent, so the redaction MUST land in both.
     const text = (r!.content[0] as { text: string }).text;
     expect(text).not.toContain("secret-token-1234567890");
@@ -100,7 +100,7 @@ describe("destructiveGuard — dry_run preview redaction", () => {
         method: "POST",
         path: "/test",
         body: {
-          // Not a secret-shaped *key*, but a Bearer-shaped *value* —
+          // Not a secret-shaped *key*, but a Bearer-shaped *value*;
           // the value-pattern redactor must still catch it.
           script_text: "curl -H 'Authorization: Bearer abcdef1234567890' https://example.com",
         },
@@ -156,5 +156,54 @@ describe("destructiveGuard — dry_run preview redaction", () => {
     expect(wouldSend.method).toBe("DELETE");
     expect(wouldSend.path).toBe("/endpoints/managed/orgA/epB");
     expect(wouldSend.description).toBe("Remove endpoint");
+  });
+  it("shows every leaf of a deeply nested body (spec MatchingFilters deploy body)", () => {
+    // POST /automations/instances with a deploy_update action whose
+    // update filter sits at actions[].params.filters[].values[]: the
+    // person confirming must see exactly what is sent.
+    const body = {
+      name: "Deploy critical updates",
+      settings: "ENABLED",
+      endpoints: [{ id: "00000000-0000-0000-0000-0000000000e1", type: "Endpoint" }],
+      actions: [
+        {
+          name: "Deploy Update",
+          template_id: "deploy_update",
+          params: {
+            filters: [
+              { field: "severity", values: ["Critical", "Important"] },
+              { field: "update_names", values: [{ name: "KB5031356", nested: { deep: ["x"] } }] },
+            ],
+            reboot_options: { auto_reboot: "yes", show_message: "yes", timeout: 240 },
+          },
+        },
+      ],
+    };
+    const r = checkDestructiveGuard(
+      {},
+      {
+        toolName: "action1_test",
+        preview: { method: "POST", path: "/automations/instances/o", body },
+      },
+    );
+    const sc = r!.structuredContent as Record<string, unknown>;
+    const wouldSend = sc.would_send as { body?: unknown };
+    expect(wouldSend.body).toEqual(body);
+    const text = (r!.content[0] as { text: string }).text;
+    expect(text).not.toContain("[truncated]");
+    for (const leaf of ["Critical", "Important", "KB5031356", "update_names"]) {
+      expect(text).toContain(leaf);
+    }
+  });
+
+  it("still masks a secret-shaped key deep inside the body", () => {
+    const body = { a: { b: { c: { d: { e: { f: { g: { password: "deep-secret-value" } } } } } } } };
+    const r = checkDestructiveGuard(
+      {},
+      { toolName: "action1_test", preview: { method: "POST", path: "/x", body } },
+    );
+    const text = (r!.content[0] as { text: string }).text;
+    expect(text).not.toContain("deep-secret-value");
+    expect(text).not.toContain("[truncated]");
   });
 });

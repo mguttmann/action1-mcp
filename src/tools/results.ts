@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { Action1Client } from "../client/action1Client.js";
 import { resolveOrgId } from "../config.js";
@@ -8,7 +8,7 @@ import {
   jsonResult,
   orgIdShape,
   runTool,
-  singleObjectOutputShape,
+  objectOutputShape,
   toRecord,
 } from "./helpers.js";
 import { filterEndpointResultDetails } from "../utils/filterOutput.js";
@@ -18,13 +18,14 @@ export function registerResultTools(server: McpServer, client: Action1Client): v
     "action1_get_automation_status",
     {
       title: "Get automation instance status",
-      description: "Returns the high-level status of one automation instance. For stdout use action1_get_automation_output.",
-      inputSchema: {
+      description:
+        "Returns the high-level status of one automation instance. For stdout use action1_get_automation_output.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         instance_id: z.string().min(1).describe("Instance UUID."),
-      },
-      outputSchema: singleObjectOutputShape,
+      }),
+      outputSchema: objectOutputShape({ instance: "object" }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -38,11 +39,7 @@ export function registerResultTools(server: McpServer, client: Action1Client): v
         const data = await client.request<unknown>(
           `/automations/instances/${encodeURIComponent(orgId)}/${encodeURIComponent(instance_id)}`,
         );
-        return jsonResult(
-          data,
-          { instance: toRecord(data) },
-          response_format,
-        );
+        return jsonResult(data, { instance: toRecord(data) }, response_format);
       }),
   );
 
@@ -50,13 +47,14 @@ export function registerResultTools(server: McpServer, client: Action1Client): v
     "action1_get_automation_results",
     {
       title: "Get automation endpoint-results overview",
-      description: "Per-endpoint result rollup for an instance. Use action1_get_automation_output for stdout.",
-      inputSchema: {
+      description:
+        "Per-endpoint result rollup for an instance. Use action1_get_automation_output for stdout.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         instance_id: z.string().min(1).describe("Instance UUID."),
-      },
-      outputSchema: singleObjectOutputShape,
+      }),
+      outputSchema: objectOutputShape({ results: "object" }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -70,11 +68,7 @@ export function registerResultTools(server: McpServer, client: Action1Client): v
         const data = await client.request<unknown>(
           `/automations/instances/${encodeURIComponent(orgId)}/${encodeURIComponent(instance_id)}/endpoint-results`,
         );
-        return jsonResult(
-          data,
-          { results: toRecord(data) },
-          response_format,
-        );
+        return jsonResult(data, { results: toRecord(data) }, response_format);
       }),
   );
 
@@ -82,18 +76,20 @@ export function registerResultTools(server: McpServer, client: Action1Client): v
     "action1_get_automation_output",
     {
       title: "Get automation script output (filtered)",
-      description: "Returns filtered stdout for one endpoint of an automation instance. Strips Action1 status markers.",
-      inputSchema: {
+      description:
+        "Returns filtered stdout for one endpoint of an automation instance. Strips Action1 status markers.",
+      inputSchema: z.object({
         ...orgIdShape,
         ...formatShape,
         instance_id: z.string().min(1).describe("Instance UUID."),
         endpoint_id: endpointIdSchema,
-        include_raw: z
-          .boolean()
-          .optional()
-          .describe("If true, also include raw description list."),
-      },
-      outputSchema: singleObjectOutputShape,
+        include_raw: z.boolean().optional().describe("If true, also include raw description list."),
+      }),
+      outputSchema: objectOutputShape({
+        output: "string",
+        raw: "array",
+        skipped_status_lines: "number",
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

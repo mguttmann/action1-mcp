@@ -9,7 +9,7 @@ import { resetConfigCache } from "../../src/config.js";
 
 let buildServer: typeof import("../../src/server.js").buildServer;
 let SERVER: ReturnType<typeof import("../../src/server.js").buildServer>;
-let CLIENT: import("@modelcontextprotocol/sdk/client/index.js").Client;
+let CLIENT: import("@modelcontextprotocol/client").Client;
 
 beforeAll(async () => {
   process.env.ACTION1_BASE_URL = "https://app.eu.action1.test/api/3.0";
@@ -19,21 +19,16 @@ beforeAll(async () => {
   resetConfigCache();
   buildServer = (await import("../../src/server.js")).buildServer;
 
-  const sdkServer = await import("@modelcontextprotocol/sdk/server/index.js");
+  const sdkServer = await import("@modelcontextprotocol/server");
   void sdkServer;
-  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-  const { InMemoryTransport } = await import(
-    "@modelcontextprotocol/sdk/inMemory.js"
-  );
+  const { Client } = await import("@modelcontextprotocol/client");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/server");
   const [clientTx, serverTx] = InMemoryTransport.createLinkedPair();
 
   SERVER = buildServer();
   await SERVER.server.connect(serverTx);
 
-  CLIENT = new Client(
-    { name: "integration-test", version: "0.0.0" },
-    { capabilities: { tools: {} } },
-  );
+  CLIENT = new Client({ name: "integration-test", version: "0.0.0" });
   await CLIENT.connect(clientTx);
 }, 30_000);
 
@@ -43,7 +38,7 @@ afterAll(async () => {
 });
 
 describe("MCP server boots and registers everything", () => {
-  it("advertises the skill-conformant server name", async () => {
+  it("advertises the server name action1-mcp-server", async () => {
     const info = CLIENT.getServerVersion();
     expect(info?.name).toBe("action1-mcp-server");
   });
@@ -64,11 +59,9 @@ describe("MCP server boots and registers everything", () => {
     );
     expect(generated.length).toBeGreaterThanOrEqual(115);
     const curated = list.tools.filter((t) =>
-      [
-        "action1_list_endpoints",
-        "action1_get_endpoint",
-        "action1_endpoints_summary",
-      ].includes(t.name),
+      ["action1_list_endpoints", "action1_get_endpoint", "action1_endpoints_summary"].includes(
+        t.name,
+      ),
     );
     expect(curated.length).toBe(3);
   });
@@ -76,42 +69,41 @@ describe("MCP server boots and registers everything", () => {
   it("every tool has a name, description, inputSchema, and outputSchema", async () => {
     const list = await CLIENT.listTools();
     for (const tool of list.tools) {
-      expect(tool.name, `tool[${list.tools.indexOf(tool)}].name`).toMatch(
-        /^[a-z0-9_]+$/,
-      );
-      expect(tool.name.length, "tool name within MCP cap").toBeLessThanOrEqual(
-        64,
-      );
+      expect(tool.name, `tool[${list.tools.indexOf(tool)}].name`).toMatch(/^[a-z0-9_]+$/);
+      expect(tool.name.length, "tool name within MCP cap").toBeLessThanOrEqual(64);
       // Sharpen: description must be a non-empty string, not just
       // truthy (a stray `0` or `false` would have passed the old
       // assertion).
-      expect(
-        typeof tool.description,
-        `${tool.name}.description type`,
-      ).toBe("string");
-      expect(
-        (tool.description ?? "").length,
-        `${tool.name}.description length`,
-      ).toBeGreaterThan(0);
+      expect(typeof tool.description, `${tool.name}.description type`).toBe("string");
+      expect((tool.description ?? "").length, `${tool.name}.description length`).toBeGreaterThan(0);
       expect(tool.inputSchema, `${tool.name}.inputSchema`).toBeDefined();
-      // Pass-N audit Item 2: every tool MUST expose an outputSchema so
+      // Every tool MUST expose an outputSchema so
       // the SDK can validate structuredContent. A missing outputSchema
       // means structured payload validation is silently skipped and
       // shape regressions surface only at runtime in client hosts.
-      expect(
-        tool.outputSchema,
-        `outputSchema missing for ${tool.name}`,
-      ).toBeDefined();
-      expect(
-        typeof tool.outputSchema,
-        `${tool.name}.outputSchema typeof`,
-      ).toBe("object");
+      expect(tool.outputSchema, `outputSchema missing for ${tool.name}`).toBeDefined();
+      expect(typeof tool.outputSchema, `${tool.name}.outputSchema typeof`).toBe("object");
       // MCP JSON-Schema convention: tool output schemas are object
       // schemas (so hosts can map structuredContent to a record).
-      expect(
-        (tool.outputSchema as { type?: unknown }).type,
-        `${tool.name}.outputSchema.type`,
-      ).toBe("object");
+      expect((tool.outputSchema as { type?: unknown }).type, `${tool.name}.outputSchema.type`).toBe(
+        "object",
+      );
+    }
+  });
+
+  // README promises both of these for every tool.
+  it("every tool sets all four annotations; every read-only tool accepts response_format", async () => {
+    const list = await CLIENT.listTools();
+    for (const tool of list.tools) {
+      for (const hint of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"]) {
+        expect(typeof tool.annotations?.[hint as "readOnlyHint"], `${tool.name}.${hint}`).toBe(
+          "boolean",
+        );
+      }
+      if (tool.annotations?.readOnlyHint === true) {
+        const props = (tool.inputSchema as { properties?: Record<string, unknown> }).properties;
+        expect(props?.response_format, `${tool.name} response_format`).toBeDefined();
+      }
     }
   });
 
@@ -121,22 +113,16 @@ describe("MCP server boots and registers everything", () => {
       (t) => t.name.includes("_list_") || t.name.includes("_get_") || t.name.endsWith("_summary"),
     );
     for (const tool of reads) {
-      expect(
-        tool.annotations?.readOnlyHint,
-        `${tool.name} readOnlyHint`,
-      ).toBe(true);
+      expect(tool.annotations?.readOnlyHint, `${tool.name} readOnlyHint`).toBe(true);
     }
   });
 
   it("destructive tools include both confirm and dry_run params", async () => {
     const list = await CLIENT.listTools();
-    const destructive = list.tools.filter(
-      (t) => t.annotations?.destructiveHint === true,
-    );
+    const destructive = list.tools.filter((t) => t.annotations?.destructiveHint === true);
     for (const tool of destructive) {
       const props =
-        ((tool.inputSchema as { properties?: Record<string, unknown> })
-          ?.properties ?? {}) as Record<string, unknown>;
+        (tool.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {};
       expect(props.confirm, `${tool.name} requires confirm`).toBeDefined();
       expect(props.dry_run, `${tool.name} requires dry_run`).toBeDefined();
     }
@@ -174,9 +160,9 @@ describe("MCP server boots and registers everything", () => {
 // ---------------------------------------------------------------------------
 // tools/call + resources/read with a stubbed fetch.
 //
-// `listTools` etc. only test registration. The Pass-3 production bug
-// (singleObjectOutputShape + cursor-shape required-field trap) only
-// fires on actual tools/call — the SDK validates structuredContent
+// `listTools` etc. only test registration. Output-schema mismatches
+// (a too-narrow single-object shape, required cursor fields) only
+// fire on actual tools/call - the SDK validates structuredContent
 // against the registered outputSchema there. These tests drive
 // representative read + destructive + resource paths against a
 // stubbed `fetch` so the schema-validation step actually runs.
@@ -193,10 +179,10 @@ function buildFetchStub(routes: ScriptedResponse[]): ReturnType<typeof vi.fn> {
   return vi.fn(async (url: string, init: RequestInit = {}) => {
     // OAuth dance: any /oauth2/token POST returns a fresh token.
     if (url.endsWith("/oauth2/token")) {
-      return new Response(
-        JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     for (const r of routes) {
       if (r.match(url, init)) {
@@ -244,7 +230,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
       arguments: { response_format: "json" },
     });
 
-    // Not an error — and structuredContent reflects the upstream list.
+    // Not an error - and structuredContent reflects the upstream list.
     // Sharpen: `toBeFalsy()` passed for `undefined`, but we want to
     // distinguish "no error reported" from "isError omitted". The
     // result MUST be explicitly non-error.
@@ -291,7 +277,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     expect(sc!.would_send).not.toBeNull();
     // Sharpen: pin method/path shape and the reboot template id in body.
     // An empty `{}` for would_send would now fail loudly. The path uses
-    // the orgId (not the endpoint_id — that goes into body.endpoints[]).
+    // the orgId (not the endpoint_id - that goes into body.endpoints[]).
     const would = sc!.would_send as {
       method: string;
       path: string;
@@ -302,15 +288,11 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     };
     expect(would.method).toBe("POST");
     expect(would.path.startsWith("/policies/instances/")).toBe(true);
-    expect(would.body.endpoints[0]?.id).toBe(
-      "00000000-0000-0000-0000-000000000000",
-    );
+    expect(would.body.endpoints[0]?.id).toBe("00000000-0000-0000-0000-000000000000");
     expect(would.body.endpoints[0]?.type).toBe("Endpoint");
     expect(would.body.actions[0]?.template_id).toBe("reboot");
     // Critically: no non-token fetch call was made.
-    const nonTokenCalls = stub.mock.calls.filter(
-      (c) => !String(c[0]).endsWith("/oauth2/token"),
-    );
+    const nonTokenCalls = stub.mock.calls.filter((c) => !String(c[0]).endsWith("/oauth2/token"));
     expect(nonTokenCalls.length).toBe(0);
   });
 
@@ -327,11 +309,13 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     const result = await CLIENT.readResource({ uri: "action1://me" });
     expect(result.contents.length).toBe(1);
     expect(result.contents[0]?.mimeType).toBe("application/json");
-    const parsed = JSON.parse(result.contents[0]?.text as string) as Record<string, unknown>;
+    const parsed = JSON.parse(
+      (result.contents[0] as { text: string } | undefined)?.text ?? "",
+    ) as Record<string, unknown>;
     expect(parsed).toEqual(meBody);
   });
 
-  // Pass-9 review #5: direct callTool tests for the curated workflow
+  // Direct callTool tests for the curated workflow
   // tools that previously had only indirect coverage. Each test pins
   // the structuredContent shape via the SDK's outputSchema validator
   // (which is what surfaces production schema-mismatches).
@@ -361,12 +345,14 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
       arguments: { response_format: "json" },
     });
     expect(result.isError ?? false).toBe(false);
-    const sc = result.structuredContent as {
-      total: number;
-      by_status: Record<string, number>;
-      by_platform: Record<string, number>;
-      windows: number;
-    } | undefined;
+    const sc = result.structuredContent as
+      | {
+          total: number;
+          by_status: Record<string, number>;
+          by_platform: Record<string, number>;
+          windows: number;
+        }
+      | undefined;
     expect(sc).toBeDefined();
     expect(sc!.total).toBe(1);
     // Sharpen: pin the per-bucket counters so a regression that emits
@@ -437,9 +423,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
       expect(would.method).toBe("POST");
       expect(would.path.startsWith("/policies/instances/")).toBe(true);
       expect(would.body.actions[0]?.template_id).toBe(expectedTemplate);
-      const nonTokenCalls = stub.mock.calls.filter(
-        (c) => !String(c[0]).endsWith("/oauth2/token"),
-      );
+      const nonTokenCalls = stub.mock.calls.filter((c) => !String(c[0]).endsWith("/oauth2/token"));
       expect(nonTokenCalls.length).toBe(0);
     },
   );
@@ -457,14 +441,16 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
       },
     });
     const sc = result.structuredContent as Record<string, unknown> | undefined;
-    const action = (sc!.would_send as {
-      body: {
-        actions: {
-          template_id: string;
-          params: { packages: Record<string, string>[] };
-        }[];
-      };
-    }).body.actions[0]!;
+    const action = (
+      sc!.would_send as {
+        body: {
+          actions: {
+            template_id: string;
+            params: { packages: Record<string, string>[] };
+          }[];
+        };
+      }
+    ).body.actions[0]!;
     expect(action.template_id).toBe("deploy_update");
     // The handler shapes updates into `[{ <package_id>: <version> }]`.
     expect(action.params.packages).toEqual([{ "pkg-foo": "2.4.0" }]);
@@ -472,7 +458,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
 
   it("tools/call action1_execute_and_wait dry_run=true returns preview", async () => {
     // action1_execute_and_wait first calls action1_get_endpoint to
-    // detect platform — the stub serves that, then dry_run preempts
+    // detect platform - the stub serves that, then dry_run preempts
     // any further upstream call.
     const stub = buildFetchStub([
       {
@@ -516,8 +502,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
   it("tools/call action1_automations_summary returns counters", async () => {
     const stub = buildFetchStub([
       {
-        match: (url) =>
-          url.includes("/automations/instances/") && !url.endsWith("/details"),
+        match: (url) => url.includes("/automations/instances/") && !url.endsWith("/details"),
         body: {
           items: [
             { status: "Success", action_status: "OK" },
@@ -534,10 +519,12 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
       arguments: { response_format: "json" },
     });
     expect(result.isError ?? false).toBe(false);
-    const sc = result.structuredContent as {
-      total_scanned: number;
-      by_status: Record<string, number>;
-    } | undefined;
+    const sc = result.structuredContent as
+      | {
+          total_scanned: number;
+          by_status: Record<string, number>;
+        }
+      | undefined;
     expect(sc).toBeDefined();
     // Sharpen: pin the counter values, not just their types. The
     // mocked upstream had 3 items, one each of Success/Running/Failed.
@@ -558,8 +545,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     };
     const stub = buildFetchStub([
       {
-        match: (url) =>
-          url.includes("/automations/instances/") && url.endsWith("inst-1"),
+        match: (url) => url.includes("/automations/instances/") && url.endsWith("inst-1"),
         body: terminal,
       },
     ]);
@@ -575,10 +561,9 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     });
     expect(result.isError ?? false).toBe(false);
     const sc = result.structuredContent as
-      | { status?: { id?: string; status?: string; percent_completed?: number } }
-      | undefined;
+      { status?: { id?: string; status?: string; percent_completed?: number } } | undefined;
     expect(sc).toBeDefined();
-    // wait_for_automation returns `{ status: <terminal instance> }` —
+    // wait_for_automation returns `{ status: <terminal instance> }` -
     // the inner object is the upstream payload. Sharpen: pin the
     // terminal status string and the instance id from the mock, not
     // just the presence of the key.
@@ -611,8 +596,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     });
     expect(result.isError ?? false).toBe(false);
     const sc = result.structuredContent as
-      | { output?: string; lines_total?: number; lines_filtered?: number }
-      | undefined;
+      { output?: string; lines_total?: number; lines_filtered?: number } | undefined;
     expect(sc).toBeDefined();
     // Status markers ("Starting" / "Completed") must be filtered out.
     const output = sc!.output as string;
@@ -622,24 +606,22 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
   });
 
   it("generated tool descriptions use the `Perm:` footer (wording pin)", async () => {
-    // Pass-6 review: pin the `Perm: <permission>.` wording in the
+    // Pin the `Perm: <permission>.` wording in the
     // generated tool descriptions so a refactor that switches back
     // to "Permissions:" or "Required scope:" gets caught.
     const tools = await CLIENT.listTools();
-    const withPerm = tools.tools.filter((t) =>
-      (t.description ?? "").includes("Perm:"),
-    );
+    const withPerm = tools.tools.filter((t) => (t.description ?? "").includes("Perm:"));
     // At least 50 of the 133 generated tools have permission tags in
-    // the spec — if the prefix wording silently changes, hundreds of
+    // the spec - if the prefix wording silently changes, hundreds of
     // descriptions degrade without a single test breaking.
     expect(withPerm.length).toBeGreaterThanOrEqual(50);
   });
 
   // -----------------------------------------------------------------
-  // Pass-N audit: waitForInstance used to short-circuit on
+  // WaitForInstance used to short-circuit on
   // `status === "Running" && percent_completed === "100"`. That was a
   // workaround for a suspected Action1 quirk, but it returned a
-  // non-terminal status as if it were terminal — for destructive
+  // non-terminal status as if it were terminal - for destructive
   // workflows that's a correctness bug. The new behaviour: only the
   // states in TERMINAL_STATUSES (Success/Failed/Stopped/Error/Cancelled)
   // terminate the poll. Running@100% must NOT short-circuit.
@@ -649,8 +631,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     let calls = 0;
     const stub = buildFetchStub([
       {
-        match: (url) =>
-          url.includes("/automations/instances/") && url.endsWith("inst-running-100"),
+        match: (url) => url.includes("/automations/instances/") && url.endsWith("inst-running-100"),
         body: { id: "inst-running-100", status: "Running", percent_completed: 100 },
       },
     ]);
@@ -659,16 +640,17 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
     // first call has been seen.
     const finalStub = vi.fn(async (url: string, init: RequestInit = {}) => {
       if (url.endsWith("/oauth2/token")) {
-        return new Response(
-          JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       if (url.includes("/automations/instances/") && url.endsWith("inst-running-100")) {
         calls += 1;
-        const body = calls === 1
-          ? { id: "inst-running-100", status: "Running", percent_completed: 100 }
-          : { id: "inst-running-100", status: "Success", percent_completed: 100 };
+        const body =
+          calls === 1
+            ? { id: "inst-running-100", status: "Running", percent_completed: 100 }
+            : { id: "inst-running-100", status: "Success", percent_completed: 100 };
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -702,7 +684,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
   });
 
   // -----------------------------------------------------------------
-  // Pass-N audit: action1_audit_log_search previously let records
+  // Action1_audit_log_search previously let records
   // with unparseable timestamps bypass the time filter silently. The
   // new behaviour: when a time filter is active, drop those records
   // AND surface a `dropped_unparseable_timestamps` counter so the
@@ -718,7 +700,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
             // Two valid records within the time window.
             { time: "2026-05-10T10:00:00Z", user: "alice", event_type: "login", target: "console" },
             { time: "2026-05-11T10:00:00Z", user: "bob", event_type: "logout", target: "console" },
-            // One record with a broken timestamp — must be dropped.
+            // One record with a broken timestamp - must be dropped.
             { time: "not-a-timestamp", user: "mallory", event_type: "exploit", target: "console" },
           ],
         },
@@ -745,7 +727,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
   });
 
   // -----------------------------------------------------------------
-  // Pass-N audit: action1_cve_remediation_plan used to swallow ALL
+  // Action1_cve_remediation_plan used to swallow ALL
   // errors from the vulnerabilities fetch (`.catch(() => ({ items: [] }))`).
   // That made a 403 (caller lacks the vuln-read scope) visually
   // indistinguishable from "no vulns found", so the agent reported
@@ -757,8 +739,8 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
   it("action1_cve_remediation_plan surfaces a warning when the vulnerabilities fetch returns 403", async () => {
     const stub = buildFetchStub([
       {
-        match: (url) =>
-          url.includes("/endpoints/managed/") && url.endsWith("/vulnerabilities"),
+        // The documented GET /vulnerabilities/{orgId}?endpoint_id= list.
+        match: (url) => url.includes("/vulnerabilities/") && url.includes("endpoint_id="),
         status: 403,
         body: { error: "forbidden" },
       },
@@ -781,17 +763,14 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
   });
 
   it("no tool description ends on an ungrammatical connector", async () => {
-    // Pass-6 review safety net: ensure the iterative connector-strip in
+    // Safety net: ensure the iterative connector-strip in
     // generate.ts keeps converging. If a pathological description ever
     // sneaks past the safety counter the description would still end on
-    // "of." / "in." / etc. — this test catches it.
+    // "of." / "in." / etc. - this test catches it.
     const tools = await CLIENT.listTools();
-    // Pass-9 review #6 + Pass-10 review #3: import the connector list
-    // from a side-effect-free module (importing generate.js previously
-    // triggered its top-level main() at test time).
-    const { INCOMPLETE_TAIL_CONNECTORS } = await import(
-      "../../src/codegen/connectors.js"
-    );
+    // Import the connector list from a side-effect-free module
+    // (importing generate.js would run its top-level main()).
+    const { INCOMPLETE_TAIL_CONNECTORS } = await import("../../src/codegen/connectors.js");
     const bad: string[] = [];
     for (const t of tools.tools) {
       const desc = t.description ?? "";
@@ -799,11 +778,8 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
         // Two patterns:
         //   (a) connector + period followed by a Footer ("Perm:" / "See action1").
         //   (b) connector + period as the last visible token (with optional
-        //       trailing whitespace, including \n — \s matches them all).
-        const beforeFooter = new RegExp(
-          `\\b${c}\\.\\s+(Perm:|See action1)`,
-          "i",
-        );
+        //       trailing whitespace, including \n - \s matches them all).
+        const beforeFooter = new RegExp(`\\b${c}\\.\\s+(Perm:|See action1)`, "i");
         const atVeryEnd = new RegExp(`\\b${c}\\.\\s*$`, "i");
         if (beforeFooter.test(desc) || atVeryEnd.test(desc)) {
           bad.push(t.name);
@@ -816,7 +792,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildServer(client) singleton wiring — Pass-13 Item 1.
+// buildServer(client) singleton wiring.
 //
 // Before this fix, the HTTP transport's /mcp handler called
 // `buildServer()` once PER REQUEST and instantiated a fresh
@@ -833,7 +809,7 @@ describe("MCP server: tools/call + resources/read with stubbed fetch", () => {
 // call to /oauth2/token in total. If the fix regresses we'd see 5.
 // ---------------------------------------------------------------------------
 
-describe("buildServer(client) reuses the supplied Action1Client (Pass-13 Item 1)", () => {
+describe("buildServer(client) reuses the supplied Action1Client", () => {
   afterAll(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -845,16 +821,16 @@ describe("buildServer(client) reuses the supplied Action1Client (Pass-13 Item 1)
       void init;
       if (url.endsWith("/oauth2/token")) {
         tokenFetches += 1;
-        return new Response(
-          JSON.stringify({ access_token: "shared-t", expires_in: 3600 }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "shared-t", expires_in: 3600 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       if (url.includes("/organizations")) {
-        return new Response(
-          JSON.stringify({ items: [{ id: "org-1", name: "Acme" }] }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ items: [{ id: "org-1", name: "Acme" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       return new Response(JSON.stringify({ error: "no route" }), {
         status: 599,
@@ -868,12 +844,8 @@ describe("buildServer(client) reuses the supplied Action1Client (Pass-13 Item 1)
     resetConfigCache();
     const sharedClient = new Action1Client(loadConfig());
 
-    const { Client: SdkClient } = await import(
-      "@modelcontextprotocol/sdk/client/index.js"
-    );
-    const { InMemoryTransport } = await import(
-      "@modelcontextprotocol/sdk/inMemory.js"
-    );
+    const { Client: SdkClient } = await import("@modelcontextprotocol/client");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/server");
 
     for (let i = 0; i < 5; i++) {
       const [clientTx, serverTx] = InMemoryTransport.createLinkedPair();
@@ -881,10 +853,7 @@ describe("buildServer(client) reuses the supplied Action1Client (Pass-13 Item 1)
       // each iteration must reuse `sharedClient.tokens`, not new it.
       const built = buildServer(sharedClient);
       await built.server.connect(serverTx);
-      const sdkClient = new SdkClient(
-        { name: "singleton-test", version: "0.0.0" },
-        { capabilities: { tools: {} } },
-      );
+      const sdkClient = new SdkClient({ name: "singleton-test", version: "0.0.0" });
       await sdkClient.connect(clientTx);
       const result = await sdkClient.callTool({
         name: "action1_list_organizations",

@@ -1,4 +1,4 @@
-# FAQ &amp; HowTo
+# FAQ and how-to
 
 Frequently asked questions and short how-to recipes that don't fit a
 single page elsewhere. Grouped by topic.
@@ -11,7 +11,7 @@ Sign in to your Action1 console → **Settings → API Credentials → Add
 API Credentials**. Pick a role (smallest one that covers your needs is
 best), give it a name, and copy both the `client_id`
 (`api-key-...@action1.com`) and the `client_secret`. The secret is
-shown **once** — store it in your password manager and in `.env`.
+shown **once** - store it in your password manager and in `.env`.
 
 See [`INSTALLATION.md`](INSTALLATION.md#getting-action1-api-credentials)
 for the full walkthrough.
@@ -20,13 +20,16 @@ for the full walkthrough.
 
 Match the region of the credential:
 
-| Action1 instance | Base URL |
+| Action1 region | Base URL |
 |---|---|
-| EU | `https://app.eu.action1.com/api/3.0` |
-| US | `https://app.action1.com/api/3.0` |
+| Europe | `https://app.eu.action1.com/api/3.0` |
+| North America | `https://app.action1.com/api/3.0` |
+| North America 2 | `https://app.na-2.action1.com/api/3.0` |
+| United Kingdom | `https://app.uk.action1.com/api/3.0` |
+| Australia | `https://app.au.action1.com/api/3.0` |
 
-A credential issued on EU will silently 401 against the US base URL
-and vice versa.
+A credential from one region gets 401 against another region's base
+URL.
 
 ### Do I need an org ID?
 
@@ -57,7 +60,9 @@ options (per-project vs. per-user) and HTTP transport.
 
 ### How do I connect to Claude Desktop?
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
+The easiest way is the MCPB bundle from the GitHub Releases page:
+double-click it and fill in the wizard. For a source build instead, edit
+`~/Library/Application Support/Claude/claude_desktop_config.json`
 (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) and
 add to `mcpServers`:
 
@@ -74,8 +79,8 @@ the connector menu. Full guide:
 
 ### Can I connect from Claude.ai (web)?
 
-Yes — start the HTTP transport (`npm run start:http`) behind a
-TLS-terminating reverse proxy with a strong `MCP_HTTP_TOKEN` set, then
+Yes. Run the HTTP transport on `127.0.0.1` behind a TLS-terminating
+reverse proxy with `MCP_HTTP_TOKEN` and `MCP_HTTP_ALLOWED_HOSTS` set, then
 add a custom connector in the Claude.ai settings pointing at
 `https://yourhost/mcp` with an `Authorization: Bearer <token>` header.
 
@@ -89,9 +94,9 @@ Yes, all stdio MCP-compliant clients work. Same command:
 
 ### Can I run it without installing Node.js?
 
-Yes — the **MCPB bundle** (Claude Desktop only): download the `.mcpb`
-from the GitHub Releases page and double-click it. The bundle ships its
-own Node runtime.
+Yes, with the **MCPB bundle** (Claude Desktop only): download the
+`.mcpb` from the GitHub Releases page and double-click it. Claude Desktop
+runs it with its built-in Node.js.
 
 ## Day-to-day usage
 
@@ -152,10 +157,19 @@ the endpoint comes back.
 
 ### How do I cancel a long-running tool?
 
-In Claude Code: `Ctrl+C`. In Claude Desktop / Claude.ai: the
-"stop generating" button. The server propagates the AbortSignal to
-the polling loop and the in-flight HTTP request — typically the tool
-returns within one polling interval (default 5 seconds).
+In Claude Code: `Esc`. In Claude Desktop or Claude.ai: the stop button.
+The server passes the cancellation to every in-flight Action1 request,
+to paginated walks and to the polling loops; the tool usually returns
+within one polling interval
+(default 5 seconds). An action that Action1 already started keeps running
+on the endpoint.
+
+What counts as a cancellation depends on the transport. On stdio it is
+the host's `notifications/cancelled`. On the stateless 2025-era HTTP
+transport it is the client closing the HTTP request that carries the
+call: every request is served by its own server instance, so a
+`notifications/cancelled` sent in a separate request does not reach the
+running call, which then runs to its end.
 
 ## Permissions and security
 
@@ -168,16 +182,17 @@ flag which tool families will 403.
 ### Why does `action1_list_vulnerabilities` return 403?
 
 Your API credential's role lacks `view_vulnerabilities`. The fix is
-in the Action1 console (Settings → Roles), not in the MCP server.
-Other 403-prone tools: `action1_list_audit_events`, `action1_export_audit_log`, `action1_audit_log_search` (need `view_audit`);
-`action1_get_subscription`, `action1_get_subscription_usage`, `action1_get_org_subscription_usage` (need `manage_enterprise`);
-`action1_list_users`, `action1_create_user`, `action1_update_user`, `action1_delete_user`, `action1_list_roles`, `action1_create_role`, `action1_update_role`, `action1_delete_role`, `action1_clone_role` (need `manage_users` / `manage_roles`).
+in the Action1 console (the role settings), not in the MCP server.
+[`permissions.md`](permissions.md) lists the permission every tool
+needs.
 
 ### How do I prevent destructive calls in my deployment?
 
-Don't set `ACTION1_ALLOW_DESTRUCTIVE`. Without that env switch,
-every destructive tool refuses to mutate state regardless of what
-the agent passes. Read-only tools still work.
+Don't set `ACTION1_ALLOW_DESTRUCTIVE`. Without that env switch, every
+destructive tool refuses to execute regardless of what the agent passes;
+previews and read-only tools still work. To hide the destructive tools
+completely, set `ACTION1_TOOLSETS=read`. The strongest limit is an
+Action1 role without write permissions.
 
 ### How do I rotate the API credential without downtime?
 
@@ -205,36 +220,32 @@ more.
 
 ### What's the minimum to deploy on a server?
 
-```bash
-git clone https://github.com/mguttmann/action1-mcp.git
-cd action1-mcp
-npm ci && npm run build
-cp .env.example .env  # fill in
-echo "MCP_HTTP_TOKEN=$(openssl rand -hex 32)" >> .env
-node --env-file=.env dist/index.js --http --host 127.0.0.1 --port 3000
-```
+Build from a release tag, fill in `.env`, set `MCP_HTTP_TOKEN`, run on
+`127.0.0.1` and put a TLS-terminating reverse proxy in front. The exact
+commands and the Caddy snippet are in
+[`DEPLOYMENT.md`](DEPLOYMENT.md#bare-metal--vm).
 
-Then put a TLS-terminating reverse proxy in front. Caddy snippet in
-[`DEPLOYMENT.md § Reverse proxy`](DEPLOYMENT.md#reverse-proxy-with-tls-caddy-example).
+### How is a release cut?
 
-### How do I cut a release?
+Releases are cut by the maintainer:
 
-```bash
-git tag vX.Y.Z        # e.g. v0.4.2
-git push origin vX.Y.Z
-```
-
-The `release.yml` workflow builds the MCPB bundle and attaches the
-`.mcpb` to the GitHub Release notes. See
-[`CONTRIBUTING.md § Re-running codegen`](CONTRIBUTING.md#re-running-codegen)
-for the full release prep.
-
-Before tagging:
-1. Bump `package.json`, `mcpb/manifest.json`, and the version literal
-   in `src/server.ts` (the MCP-handshake version clients see).
-2. Run `npm install` to sync `package-lock.json`.
-3. Update `CHANGELOG.md` with the new version section + footer link.
-4. Verify `npm test` and `./scripts/inspector-smoke.sh` are green.
+1. `npm version X.Y.Z --no-git-tag-version` (updates `package.json` and
+   `package-lock.json`) and the same version in `mcpb/manifest.json`.
+   The server reads its version from `package.json`;
+   `tests/unit/serverContract.test.ts` fails if the manifest differs.
+2. Move the `[Unreleased]` notes in `CHANGELOG.md` to a dated section.
+3. `npm run check` and `npm run test:e2e` green, and
+   `./scripts/inspector-smoke.sh` against a test tenant.
+4. Tag `vX.Y.Z` on a commit of `main` and push the tag. The
+   `release.yml` workflow fails unless the tag equals `v` plus the
+   `package.json` version and its commit is on `main`, runs the whole CI
+   workflow on that commit, builds the reproducible MCPB bundle and the
+   npm tarball with a CycloneDX SBOM each, and creates the GitHub
+   Release with these assets and `SHA256SUMS` (an existing release is
+   never overwritten). Its npm publish job stays off until the
+   repository variable `NPM_PUBLISH_ENABLED` is `true`. The repository
+   settings it relies on are in
+   [`maintainers/repo-settings.md`](maintainers/repo-settings.md).
 
 ## Troubleshooting
 
@@ -244,15 +255,17 @@ OAuth token exchange failed. Check `ACTION1_CLIENT_ID`,
 `ACTION1_CLIENT_SECRET`, `ACTION1_BASE_URL` for typos / region
 mismatch. The structured logger emits
 `refresh_token_failed_falling_back_to_client_credentials` and
-`http_request_handler_failed` events on stderr — read those for
+`http_request_handler_failed` events on stderr - read those for
 the exact API response.
 
 ### I see "spec SHA mismatch" after a `git pull`
 
-Action1 changed the OpenAPI spec upstream. Don't auto-update the
-pin — review the diff, regenerate the tools (`npm run codegen`),
-re-pin the SHA, and commit the lot. Full recipe in
-[`CONTRIBUTING.md § Re-running codegen`](CONTRIBUTING.md#re-running-codegen).
+The committed spec, its SHA and the generated tools disagree, usually
+because a commit changed one without the others. Don't re-pin blindly:
+review the diff, regenerate the tools (`npm run codegen`) and commit spec,
+SHA and generated file together. Full recipe in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#re-running-codegen). Changes at
+Action1 itself are reported by `npm run spec:check`, not by this test.
 
 ### Tool descriptions look fine but Claude picks the wrong tool
 
@@ -261,20 +274,21 @@ Two likely causes:
 1. The tool's description doesn't say what it *doesn't* do (so the
    model assumes it does everything search-shaped). Tighten the
    description.
-2. The `inputSchema` is too loose — `z.string()` for a UUID doesn't
+2. The `inputSchema` is too loose - `z.string()` for a UUID doesn't
    constrain the model. Use `z.string().uuid()` or `.regex(...)`.
 
 ### My destructive call fails with "Refusing destructive call"
 
-Three possible gates:
+The error names the gate that stopped it:
 
 | Error message contains | Fix |
 |---|---|
 | `ACTION1_ALLOW_DESTRUCTIVE` | Set the env to `true`/`1`/`yes` and restart. |
+| `Refusing account operation` | Users, roles, organizations, enterprise and `action1_raw_request` writes also need `ACTION1_ALLOW_ACCOUNT_OPS=true`. |
 | `confirm` | Pass `confirm: "YES"` exactly (uppercase, no whitespace). |
-| `dry_run` | Default is `true`; pass `dry_run: false` to actually execute. |
 
-All three must pass simultaneously. See
+Without `dry_run: false` the call only returns a preview. All gates must
+pass at the same time. See
 [`SECURITY.md § Destructive guard`](SECURITY.md#destructive-guard).
 
 More failure modes in [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
@@ -286,10 +300,10 @@ More failure modes in [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - **Security advisory**:
   <https://github.com/mguttmann/action1-mcp/security/advisories/new>
 - **Read the docs**:
-  - [`INSTALLATION.md`](INSTALLATION.md) — set up
-  - [`USAGE.md`](USAGE.md) — tool reference
-  - [`EXAMPLES.md`](EXAMPLES.md) — recipes
-  - [`DEPLOYMENT.md`](DEPLOYMENT.md) — production deploys
-  - [`SECURITY.md`](SECURITY.md) — threat model
-  - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — failure modes
-  - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development
+  - [`INSTALLATION.md`](INSTALLATION.md) - set up
+  - [`USAGE.md`](USAGE.md) - tool reference
+  - [`EXAMPLES.md`](EXAMPLES.md) - recipes
+  - [`DEPLOYMENT.md`](DEPLOYMENT.md) - production deploys
+  - [`SECURITY.md`](SECURITY.md) - threat model
+  - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) - failure modes
+  - [`CONTRIBUTING.md`](CONTRIBUTING.md) - development

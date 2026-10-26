@@ -3,545 +3,482 @@
 All notable changes to this project are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org).
+Before 1.0, a minor version can contain breaking changes; they are listed
+first in each release.
 
 ## [Unreleased]
 
-### Changed
+Nothing yet.
 
-- Documentation reconciled to the current tool/test surface for the public release: **166 tools** (133 auto-generated + 33 curated incl. 6 workflow wrappers), **527 tests** across 48 files (37 unit / 4 integration / 6 security / 1 performance), **12** eval qa_pairs, **7** resources, **6** slash-prompts.
-- **Stale / incorrect tool names fixed** in the guides
-  (`action1_list_endpoint_details` → `action1_get_automation_script_output`,
-  `action1_create_subscription_{quote,trial}` →
-  `action1_request_enterprise_{quote,trial}`, `action1_export_report` →
-  `action1_get_export_for_report`, plus the group/schedule CRUD names in
-  the api-coverage-gaps roadmap recap).
+## [0.6.0] - 2026-10-26
 
-## [0.5.0] — 2026-05 — Full-codebase audit (Pass-13)
+Hardening release before the repository goes public: safer defaults for
+state changes and the HTTP transport, curated tools bound to the Action1
+spec, complete list data, an audit trail, current dependencies without
+known runtime advisories, a reproducible release chain, and
+documentation that matches the code. Tool names, existing input
+parameters, environment variable names, stdio as the default transport
+and the default tool set are unchanged; one tool is new.
 
-Minor release. Five-agent parallel audit of the full ~19k-LOC source
-tree (auth/HTTP, tool handlers, redaction, codegen, tests) closed
-7 Critical + 30 Important findings; test count grew 424 → 498 (+74).
-Also closes 5 moderate `npm audit` findings via the vitest 2 → 4 bump.
+### Breaking changes
 
-### Changed
+- **HTTP mode requires a token.** `--http` refuses to start without
+  `MCP_HTTP_TOKEN`, also on `127.0.0.1`. For local development,
+  `MCP_HTTP_ALLOW_NO_AUTH=true` runs without a token on loopback binds
+  only and logs a warning. stdio and the MCPB bundle are unaffected.
+- **Wildcard HTTP binds** (`0.0.0.0`, `::`) need the new
+  `MCP_HTTP_ALLOWED_HOSTS`.
+- **Account operations need a second switch.** Changes to users, roles,
+  `PATCH /me`, the enterprise account, organizations and subscription
+  requests, and every non-GET `action1_raw_request`, also need
+  `ACTION1_ALLOW_ACCOUNT_OPS=true`. Without it they are refused at
+  execution time; previews still work and the tools stay registered.
+- **Strict tool inputs.** Unknown or misspelled arguments (for example
+  `confrim`) are rejected with an "Unrecognized key" validation error
+  instead of being dropped silently. All documented arguments stay valid.
+- **Generated write tools validate the request body against the spec.** A
+  body that misses a field the spec marks as required, or uses a value
+  outside a spec enum, is rejected before it is sent (for example
+  `action1_create_automation_instance` now requires `name`, `endpoints`
+  and `actions` items with `template_id` and `name`). Unknown extra keys
+  still pass through; PATCH bodies treat every top-level field as
+  optional.
+- **Generated tool parameters keep the spec enums** that are defined by
+  `$ref` (`status`, `reboot_required`, `level`, `platform`, ...); a value
+  outside the enum is rejected. `timefrom` / `timeto` accept the
+  documented Action1 format `YYYY-MM-DD_HH-MM-SS` or ISO-8601 and are
+  sent in the Action1 format.
+- **Generated paging inputs are bounded.** `limit` must be an integer
+  from 1 to 50000 and `from` an integer from 0; negative, zero or
+  fractional values are rejected before the call. (`limit: 0` used to
+  return a cursor that never advanced.)
+- **Mutations are no longer retried after a 5xx or a connection reset.**
+  POST/PUT/PATCH/DELETE from generated tools and `action1_raw_request` are
+  retried only on 429 and on network errors before the request was sent,
+  so a script, deployment, reboot or created resource cannot run twice.
+  The error says the request was not retried and asks to verify the
+  resulting state.
+- **Every Action1 call has a time limit**, by default 60 s including
+  retries (`ACTION1_REQUEST_TIMEOUT_MS`). Before, only the HTTP client
+  defaults applied.
+- **Redirects are refused.** Token and API requests fail on a 3xx answer
+  instead of following it.
+- **Cursors are checked.** A cursor that is invalid, truncated, edited, or
+  was issued for another tool or other arguments returns an error instead
+  of restarting at the first page.
+- **Markdown list metadata** is printed as `key: value` lines below the
+  table instead of one `_count=... · has_more=..._` line, and a Markdown
+  page holds only the rows its table can show. `structuredContent` carries
+  the same items as the text; `response_format: "json"` returns larger
+  pages.
+- **Unsafe API paths are refused** before any request and before the
+  dry-run preview: empty segments (empty IDs, `//`, a trailing `/`), dot
+  segments (also `%2e`-encoded), IDs containing `/` or `\`, and control
+  characters. Resolved URLs must stay under the `ACTION1_BASE_URL` path.
+- **Stricter configuration.** `PORT` / `--port` must be 1 to 65535,
+  `ACTION1_DEFAULT_TIMEOUT_MINUTES` / `ACTION1_DEFAULT_RETRY_MINUTES`
+  integers from 0 to 10080, and `--host` needs a value. These now abort
+  startup in every mode, stdio included.
+- **Unknown command-line arguments are refused.** An unknown argument or
+  an invalid `--port` / `--host` value exits with code 2 and one message
+  instead of starting the stdio server (a typo in `--http` used to start
+  stdio). The documented launches (no arguments, `--stdio`, `--http`,
+  `--port`, `--host`, `--help`, `--version`) are unaffected.
+- **`action1_automations_summary` drops `by_template`.** Instance lists
+  carry no `actions` (spec, and empty on the live API), so the field was
+  always empty.
+- **No MCP `logging` capability.** The server no longer advertises it or
+  handles `logging/setLevel` (deprecated in MCP 2026-07-28; the server
+  never sent log notifications). Logs stay on stderr, controlled by
+  `ACTION1_LOG_LEVEL`.
+- **`resources/read` failures are JSON-RPC errors** (InternalError with
+  the upstream status and hint in `data`; ResourceNotFound for an
+  upstream 404) instead of successful content holding an error JSON.
+- **Execution tools validate more strictly.** `action1_execute_and_wait`
+  `endpoint_id` must be an endpoint UUID (hex digits in either case, also
+  in the published pattern); `success_exit_codes` on
+  `action1_run_script` and `action1_execute_and_wait` must be digits
+  separated by commas; digit-string `timeout_minutes` / `retry_minutes`
+  above 10080 are rejected like numeric values.
+- **The two package-upload tools** (`action1_init_software_upload`,
+  `action1_upload_software_chunk`) return an explanatory error instead of
+  sending a malformed request: Action1's upload needs request headers and
+  a binary body this server does not send.
+- **Node.js 22.12 or newer is required** (`engines.node` `>=22.12`, also
+  declared in the MCPB manifest). Node 20, end of life since 2026-04-30,
+  is no longer supported. CI tests Node 22, 24 and 26 and the exact
+  floor 22.12; the dev tooling moves to vitest 5 (ADR 0001, addendum of
+  2026-10-26) and needs Node 22.13 or newer (ESLint 10).
 
-- **HTTP transport now uses a single `Action1Client` per process**
-  (was: one per request). Token cache + refresh-coalescing were
-  effectively dead in HTTP mode — every request hit `/oauth2/token`
-  fresh. Now `buildServer(existingClient?)` accepts an injected client;
-  `runHttp()` builds one before `app.listen()`. stdio path unchanged.
-- **SIGTERM / SIGINT graceful shutdown** in both transports. HTTP
-  drains in-flight requests via `server.close()` with a 25 s hard
-  ceiling. k8s rolling deploys + `docker stop` no longer drop active
-  sessions.
-- **Express body parser scoped to `POST /mcp`** (was: global `app.use`).
-  Unauthenticated requests to non-existent paths no longer parse a
-  1 MB JSON body before 404. Closes a DoS amplifier.
-- **`TRUST_PROXY` env knob** for reverse-proxy deployments. Without it,
-  `req.ip` resolves to the proxy and the rate-limit lumps all real
-  users into one bucket. Values: `false` (default) | `true` |
-  `loopback` | CIDR. Operators should only enable for trusted upstream
-  proxies.
-- **`Retry-After` clamped to 60 s** at the retry layer. A malicious or
-  buggy upstream returning `Retry-After: 86400` previously pinned the
-  client for 24 h; now emits a `retry_after_clamped` warn-log.
-- **`expires_in` clamped to 60 s … 24 h** in the OAuth token cache.
-  Defends against `expires_in: 0` (cache-thrash) and `expires_in:
-  99999999` (stale token forever).
-- **`ACTION1_LAST_SEEN_STALE_MINUTES` env knob** (default 10, range
-  1–1440). Was hardcoded; endpoints that check in every 15 min were
-  incorrectly flagged offline.
-- **`action1_reboot_endpoint` now does the connectivity check** (was:
-  silently queued reboots for offline endpoints — they'd fire days
-  later when the box came back online). `skip_connectivity_check`
-  param to bypass.
-- **`timeout_minutes` / `retry_minutes` accept both `number` and
-  digit-string** (was: inconsistent — one number, one string regex).
-- **Redaction patterns extended**: `x-action1-token`, `cookie`,
-  `set-cookie`, bare `token` keys + cookie-shape value pattern. Pass-13
-  found Action1's own primary header was not in the redact set.
-- **`Action1ApiError.body` redacted at construction** (was: only at
-  `toToolErrorText()` render time). Defence-in-depth — downstream
-  consumers reading `err.body` directly now see the redacted form.
-- **`OrgResolver` 5-min TTL + working `invalidate()`**. Long-running
-  servers no longer hold stale org lists across hours of API-key
-  rotations.
-- **Prompt-injection defence**: argument length caps (`script_text`
-  ≤ 8 KB, other args ≤ 512), triple-backtick fence escape via ZWSP,
-  user input now wrapped in `<<<USER INPUT BEGIN/END>>>` block placed
-  **after** the workflow steps.
-- **Compactor honours `verbose: true` in cursor / `auto_paginate`
-  mode** (was: paginated path bypassed `compactItem` entirely; the
-  documented opt-out had no effect on bulk reads).
-- **Generated tool descriptions no longer truncate mid-word**. Witness
-  cases like `"specific v."`, `"detailed inf."`, `"specific custom p."`
-  are gone — `fitLead` now backtracks to a word boundary and appends a
-  single-char ellipsis.
-- **Codegen `query` param fallback `z.unknown()` → `z.string()`**
-  (matches HTTP query-string semantics; 52 → 41 unknown-typed
-  parameters in the generated tools). Avoids `?status={"foo":1}`
-  requests reaching the API.
+### Security
 
-### Fixed
-
-- **`asStartedJob` returned success-shape with `instance_id: undefined`**
-  on parse failures. Downstream `wait_for_automation` calls got an
-  undefined ID and surfaced an opaque 404. Now `errorResult`.
-- **`waitForInstance` Running + 100 % short-circuit** treated mid-flight
-  uploads as terminal. Removed; only `TERMINAL_STATUSES` terminate.
-- **`audit_log_search` time-range filter bypassed items with
-  unparseable timestamps**. Now drops them and surfaces a
-  `dropped_unparseable_timestamps` counter.
-- **`filterOutput` substring-match silently dropped legit lines**
-  containing the word "Completed" (e.g. `"Completed CVE remediation:
-  3 packages"`). Now anchored — `/^(Starting|Waiting|Completed)(:|\s*$)/`.
-- **`destructiveGuard` re-parsed `process.env` directly**. A trailing
-  `\n` in `ACTION1_ALLOW_DESTRUCTIVE` (common from `.env` paste)
-  silently disabled the env switch. Now reads via `loadConfig()`'s
-  Zod-validated trim+lowercase pipeline.
-- **`cve_remediation_plan` swallowed 403 → `plan: []`** silently. Now
-  surfaces a `warning` field on 403/404 so the agent can distinguish
-  "no scope" from "no vulns".
-- **`pagedFetch` O(n²) re-stringification** of the full accumulator on
-  every item → running-bytes counter (matches `capItemList`).
-- **`compactItem` was not idempotent** — second pass re-truncated the
-  already-truncated marker. Now guards on the marker suffix.
-- **`vi.restoreAllMocks()` was called at module-load time** in
-  `tests/unit/runtime.test.ts` instead of `afterEach` — no cleanup
-  between tests. Hoisted into `afterEach` for both describes.
-- **`tests/integration/server.test.ts` did not check `outputSchema`
-  per tool** (the exact bug class Pass-3 fixed in production). Loop
-  now asserts `outputSchema.type === "object"`.
-- **`tests/integration/server.test.ts` pinned tool count `> 20`**
-  (real total is 164). Tightened to ≥ 160 with curated/generated
-  splits.
-- **`tests/unit/loggerThrottle.test.ts` was wall-clock-dependent** —
-  2 000 sequential log calls could cross a minute boundary on slow CI
-  and double the budget. Now uses `vi.useFakeTimers()`.
-
-### Removed
-
-- **`src/codegen/spec/PINNED_SHA.ts`**. Dead code — generated on every
-  codegen run but imported nowhere. SHA drift is still caught by
-  `openapi.sha256` + `tests/unit/specSha.test.ts`.
-- **`auth` field in `/healthz` response**. Disclosed the auth mode
-  (`"bearer"` vs `"none"`); attacker could detect via 401-probe anyway,
-  but no reason to make it free.
-
-### Internal
-
-- **vitest 2.1.8 → 4.1.6** (`npm audit fix --force`). Closes 5 moderate
-  vulnerabilities in transitive `vite` / `esbuild`. Dev-only; nothing
-  ships in `dist/`. All 498 tests pass on v4 unchanged.
-- **`vitest.config.ts` coverage thresholds** (75 / 70 / 60 / 75)
-  configured but opt-in via `--coverage` — CI unchanged. Requires
-  `@vitest/coverage-v8` peer-install before first run.
-- **12 weak-assertion sharpenings** in `tests/integration/server.test.ts`:
-  `.toBeFalsy()` → `.toBe(false)`, `.toBeDefined()` → `typeof object +
-  notNull`, `.toBeTruthy()` → `typeof string + length > 0`.
-
-### Acknowledged limitations (deferred to a later pass)
-
-- **OAuth token request still form-encoded** (spec says JSON +
-  `grant_type`). Works against the current Action1 tenant; spec
-  hardening would break the cold-cache acquisition. Marked as TODO with
-  Pass-13 reference; will switch with tenant-side verification.
-- **POST/PUT/PATCH body schemas in generated tools remain
-  `z.record(z.unknown())`**. Generating Zod from OpenAPI component
-  schemas is a non-trivial codegen rewrite. Curated tools have proper
-  schemas. Documented in CONTRIBUTING.
-- **`deploy_package` / `uninstall_program` `params` shape** stays loose
-  because the agent is expected to consult `action1_get_action_template`
-  for the per-template field set. Capped at 100 keys to limit blast
-  radius.
-
----
-
-## [0.4.2] — 2026-05 — Doku-Sync Round 2 (Pass-12)
-
-Patch release. Pure documentation fixes — no code behaviour changes.
-
-### Fixed
-- `docs/DEPLOYMENT.md` § HTTP transport: the
-  "logs a warning but does not refuse" wording was a stale Pre-Pass-4
-  description. Pass-11 fixed SECURITY.md and TROUBLESHOOTING.md but
-  missed this third occurrence. Now matches the actual hard-fail
-  behaviour with the exact error message from `src/index.ts:91-97`.
-- `docs/FAQ.md` § How do I cut a release? was hard-coded to `v0.3.0`.
-  Now generic `vX.Y.Z` with a 4-step pre-tag checklist (version-string
-  sync across package.json + manifest.json + server.ts, lockfile sync,
-  CHANGELOG update, test + smoke verify) to prevent the
-  Pass-11-class drift from recurring.
-
----
-
-## [0.4.1] — 2026-05 — Doku-Sync nach Pass-10
-
-Patch release. Pure documentation and version-string fixes — no code
-behaviour changes.
-
-### Fixed
-- `src/server.ts` MCP-handshake-version was still 0.3.0 — clients saw a
-  stale version even though the git tag was v0.4.0.
-- `mcpb/manifest.json` MCPB bundle version + `long_description`
-  ("24 curated" → "30 curated tools incl. 6 workflow wrappers").
-- Doku-drift across README, TESTING, CONTRIBUTING, INSTALLATION,
-  SECURITY, DEPLOYMENT, TROUBLESHOOTING, FAQ, api-coverage-gaps, and
-  .env.example: 170 → 348 test counts, v0.3 → v0.4.1 status,
-  hard-fail wording for the non-loopback bind (Pass-4 behaviour change
-  that the docs hadn't caught up with).
-- `.env.example` now documents the MCP_HTTP_TOKEN ≥16-char rule.
-
-### Internal
-- CHANGELOG footer-links added for `[0.4.0]` and `[0.4.1]`.
-
----
-
-## [0.4.0] — 2026-05 — Audit-Wellen Pass-4 bis Pass-10
-
-Ten review passes since 0.3.0 closed 76 findings and added 137 tests
-(218 → 348). The net behaviour-level changes operators should be aware
-of are below; all internal refactors (schema-passthrough, codegen
-description quality, test coverage) are captured in commit history.
-
-### Changed
-
-- **HTTP Bearer-Auth: token compared post-trim on both sides** (Pass-4 +
-  Pass-7). `MCP_HTTP_TOKEN` whitespace is now stripped before length /
-  timing-safe compare; the captured Authorization-header token is
-  trimmed symmetrically. Whitespace-only headers (e.g. `Bearer    `)
-  now return `401 "Bearer token required"` (was `401 "Invalid bearer
-  token"`). Same status code — only the error string differs, so
-  log-greps for either message should be updated.
-- **Non-loopback HTTP bind without a Bearer token: hard-fails on
-  startup** (Pass-4). Previously emitted a `warn` and ran anyway. Set
-  `MCP_HTTP_TOKEN=<16-char-or-longer>` to bind to anything other than
-  `127.0.0.1` / `localhost` / `::1`.
-- **`ACTION1_DESTRUCTIVE_AUTO_CONFIRM` no longer flips `dry_run`** to
-  false (Pass-4). Auto-confirm only waives the per-call
-  `confirm: "YES"` requirement; `dry_run` keeps defaulting to `true`.
-  A bare `tool({})` call in auto-confirm mode is therefore still a
-  preview. Set `dry_run: false` explicitly to execute.
-- **Network-transient errors are now auto-retried** (Pass-9). Previously
-  `ECONNRESET` / `ENOTFOUND` / `EAI_AGAIN` etc. were wrapped as
-  `Action1ApiError(status=0)` and silently dropped through
-  `shouldRetry`. They now follow the same backoff schedule as 429 / 5xx.
-- **Export endpoints (CSV / audit-log download) lost their pagination
-  args** (Pass-9). `action1_get_export_for_report` /
-  `action1_export_audit_log` previously advertised `auto_paginate` /
-  `cursor` even though the response is a single CSV blob. Those args
-  are gone; the API still accepts `limit` / `from` for row windowing.
-
-### Fixed
-
-- **Output-schema mismatches** for ~30 tools (Pass-3 + Pass-4). The
-  shared `singleObjectOutputShape` / `okStatusOutputShape` schemas now
-  use `.passthrough()`, so structured-content with extra envelope keys
-  (`id`, `type`, `next`, etc.) validates cleanly.
-- **`capItemList` worst-case from O(n² log n) to O(n)** (Pass-4) via a
-  single-pass byte-cost accumulator. Plus a structured placeholder for
-  single-record-over-cap instead of the previous silent empty list.
-- **TokenProvider 401 race**: a 401 mid-flight now triggers
-  `tokens.invalidate()` plus a one-shot retry with a fresh token,
-  guarded by a flag against infinite loops (Pass-4).
-- **Pagination termination** uses `hasMore` / `total` envelope hints
-  before falling back to the length heuristic (Pass-4), preventing
-  early termination when a server-side filter produced a short mid
-  page.
-- **Tool descriptions** no longer emit mid-sentence connector tails
-  ("…deployed on. Perm:") thanks to an iterative drop-and-re-terminate
-  loop in the codegen (Pass-5 + Pass-6).
-- **Tool collision** `action1_list_missing_updates` (curated) vs
-  `action1_list_endpoint_missing_updates` (generated): the generated
-  variant now leads with `"Filtered/paginated variant of
-  action1_list_missing_updates (curated). Use for severity/
-  approval_status/sortby filtering."` (Pass-4).
-
-### Added (operator-visible)
-
-- **`scripts/inspector-smoke.sh`** smoke-test runner that hits a real
-  Action1 instance via Inspector-CLI and flags any schema or registration
-  mismatch (Pass-3). Add it to your release checklist.
-- **Operator WARN logs** when destructive auto-confirm or dynamic
-  toolsets are active at start-up (Pass-4 + Pass-5).
-- **Per-item compactor** for list responses: embedded scripts,
-  100-entry CVE walls, and EULA blocks are placeholder-replaced by
-  default to keep host-context budgets sane. Pass `verbose: true` on
-  any read-only tool to receive the raw upstream record (Pass-2 +
-  Pass-4).
-
-### Internal
-
-- **137 new tests** across 10 review passes (218 → 348). New suites:
-  `action1Client`, `errorsHint`, `safeResourceRead`, `outputSchemas`,
-  `bearerAuth`, `capOutputLinear`, `loggerThrottle`, `osDetectServer`,
-  `orgCache`, `endpointInfo`, `prompts`, `inferOutputShape`, plus
-  extensive expansions of `pagination`, `destructiveGuard`, `config`,
-  and `auth`.
-- **`src/codegen/connectors.ts`**: extracted from `generate.ts` so the
-  connector list can be imported without triggering codegen's top-
-  level `main()` write-to-disk effect.
-- **`RetryOverride` type**: callers can pass `{maxAttempts, baseDelayMs}`
-  partials instead of the previous boolean-only override (which
-  silently ignored object values).
-
----
-
-## [0.3.0] — 2026-05
-
-### BREAKING — auto-generated tool names
-
-Every auto-generated tool was renamed from a path-derived form (e.g.
-`action1_endpoints_managed_endpointId_patch`,
-`action1_organizations_post`) to a **verb-first** form
-(`action1_update_endpoint`, `action1_create_organization`). 134
-generated tools are now emitted under the new names; 5 are skipped to
-make room for the curated tools that already cover the same surface.
-
-If your workflows refer to old names, here are the most common
-migrations:
-
-| Old name | New name |
-|---|---|
-| `action1_endpoints_managed_endpointId_patch` | `action1_update_endpoint` |
-| `action1_endpoints_managed_endpointId_move` | `action1_move_endpoint` |
-| `action1_endpoints_groups_orgId` | `action1_list_endpoint_groups` |
-| `action1_endpoints_groups_orgId_post` | `action1_create_endpoint_group` |
-| `action1_endpoints_groups_groupId_contents_get` | `action1_list_group_contents` |
-| `action1_organizations_post` | `action1_create_organization` |
-| `action1_policies_schedules_orgId_automationId_get` | `action1_get_automation_schedule` |
-| `action1_policies_instances_orgId_automationId_get` | `action1_get_automation_instance` |
-| `action1_policies_instances_orgId_post` | `action1_create_automation_instance` |
-| `action1_cve_descriptions_cveId_get` | `action1_get_cve_description` |
-| `action1_audit_events_get` | `action1_list_audit_events` |
-| `action1_audit_export_get` | `action1_export_audit_log` |
-| `action1_scripts_get` | `action1_list_scripts` |
-| `action1_logs_orgId_get` | `action1_list_logs` |
-| `action1_roles_get` | `action1_list_roles` |
-| `action1_users_get` | `action1_list_users` |
-| `action1_me` | `action1_get_me` |
-| `action1_search_orgId_get` | `action1_search` |
-| `action1_subscription_enterprise_get` | `action1_get_subscription` |
-| `action1_subscription_usage_enterprise_get` | `action1_get_subscription_usage` |
-| `action1_subscription_usage_organizations_orgId_get` | `action1_get_org_subscription_usage` |
-| `action1_endpoints_agent_installation_orgId_installType_get` | `action1_get_agent_install_url` |
-| `action1_endpoints_connector_installation_orgId_windowsEXE_get` | `action1_get_windows_deployer_url` |
-| `action1_endpoints_status_orgId_get` | `action1_get_endpoints_onboarded_status` |
-| `action1_endpoints_discovery_orgId_get` | `action1_get_endpoint_discovery_settings` |
-| `action1_apps_orgId_requery_endpointId_post` | `action1_requery_installed_software_for_endpoint` |
-| `action1_apps_orgId_requery_post` | `action1_requery_installed_software_for_org` |
-| `action1_vulnerabilities_orgId_get` | `action1_list_org_vulnerabilities` |
-| `action1_endpoints_groups_groupId_contents_post` | `action1_modify_group_membership` |
-| `action1_packages_all_post` | `action1_create_package` |
-| `action1_license_enterprise_trial_post` | `action1_request_enterprise_trial` |
-| `action1_license_enterprise_quote_post` | `action1_request_enterprise_quote` |
-| `action1_enterprise_request_closure` | `action1_request_enterprise_closure` |
-| `action1_enterprise_revoke_closure` | `action1_revoke_enterprise_closure` |
-| `action1_audit_events_id_get` | `action1_get_audit_event` |
-
-The naming heuristic lives in `src/codegen/naming.ts`; per-operation
-hand-overrides for the trickier cases live in
-`src/codegen/curated-overrides.ts` (`NAME_OVERRIDES`). The codegen
-runs a 3-pass conflict resolver (parent qualifier, then HTTP method
-suffix as last resort) so duplicates can never silently bypass curated
-tools.
-
-The 30 curated tool names (e.g. `action1_list_endpoints`,
-`action1_run_powershell`, `action1_execute_and_wait`) are unchanged
-and remain the recommended path for the common workflows.
-
-Total tool surface: **164** (was 167). The 3-tool drop is from 6
-operations now covered by curated tools (which gain extra Action1
-filter params — see "Added" below) minus 3 new tools added in this
-release (`action1_endpoints_summary`, `action1_automations_summary`,
-`action1_list_org_vulnerabilities`).
-
-The "100 % skill conformance" pass. Touches every tool registration,
-adds three new test categories, normalises naming, and lands a number
-of long-standing audit items in one shot.
+- All known advisories in runtime dependencies are resolved (MCP SDK
+  GHSA-46jr-4wx8-v453 and GHSA-f897-62hf-6gxq, zod GHSA-mrhx-c7xc-m3w5,
+  proxy-addr GHSA-jqcg-44mw-7w3h, body-parser CVE-2026-12590, qs, hono,
+  fast-uri, ip-address). CI fails when a runtime dependency has a high or
+  critical advisory.
+- DNS rebinding on the HTTP transport is closed. The `Host` header is
+  always checked (loopback names, the bind address and
+  `MCP_HTTP_ALLOWED_HOSTS`; the port is ignored), and browser `Origin`
+  headers are always checked (`MCP_HTTP_ALLOWED_ORIGINS` when set,
+  otherwise loopback origins only). A foreign Host or Origin gets 403,
+  with or without a token.
+- Token and API requests never follow HTTP redirects
+  (`redirect: "error"`), so the client secret, the bearer token and
+  mutation bodies cannot reach another origin.
+- `tools/call` arguments are capped at 100000 combined array elements and
+  object members; larger payloads are rejected as invalid params.
+- HTTP 500 responses are generic JSON-RPC errors with a `correlation_id`;
+  details appear only in the server log.
+- New `ACTION1_ALLOWED_ORG_IDS`: a comma-separated list of organization
+  UUIDs. Any other organization (argument, resource URI,
+  `action1_raw_request` path, also a query string written into that path
+  such as `/endpoints/managed/{orgId}?orgId=...`, org IDs in request
+  bodies and queries) is refused, and `ACTION1_ORG_ID` must be on the
+  list. For every guarded mutation (curated, generated, raw) the org ids
+  in the body are checked at any depth, with org id keys compared
+  regardless of case and separators (`orgId`, `Org-ID`,
+  `organization-id`, `targetOrganizationId`, `organisation_id`, ...),
+  including settings, role and approval scopes. Mutations
+  that are not bound to one allowed organization (enterprise paths,
+  Enterprise or unbound scope entries) are refused unless
+  `ACTION1_ALLOW_ENTERPRISE_OPS=true`; the refusal is logged as
+  `destructive_refused` with reason `org_not_allowed`.
+- Successful tool results and resource reads mask the values of
+  credential-shaped keys (`client_secret`, `password`, `access_token`,
+  `api_key`, ...) at any depth. Upstream bodies echoed in error texts (a
+  start response without an instance id, the `raw_body` of a
+  `no_instance_id` error, the last status of a timed-out poll, the
+  response to a failed start of `action1_execute_and_wait`) are masked
+  the same way: credentials always, personal data with
+  `ACTION1_REDACT_PII`.
+- The release workflow runs the full CI workflow on the tag commit,
+  refuses tags whose commit is not on main, and never overwrites an
+  existing GitHub release. Provenance attestation covers the MCPB, the
+  npm tarball and both SBOMs.
+- The agent setup guide (`CLAUDE.md`) no longer asks for the Action1
+  client ID or secret in the chat; they go only into the Claude Desktop
+  wizard, with a rotation hint for secrets that were pasted before.
 
 ### Added
 
-- **`response_format` on every list-shaped tool** (`markdown` default,
-  `json` opt-in). Plumbed through `cappedListResult` /
-  `pagedListResult` / `jsonResult`.
-- **Markdown rendering humanises Action1 timestamps**
-  (`YYYY-MM-DD_HH-MM-SS UTC`) and trims the `name (id)` form for
-  display columns. New helper module `src/utils/format.ts`.
-- **Centralised constants** in `src/constants.ts`
-  (`CHARACTER_LIMIT = 25_000`, `WIRE_LIMIT_BYTES = 400_000`,
-  `LAST_SEEN_FRESH_SECONDS = 600`, …). Replaces the duplicate
-  hard-codes in `markdownTable.ts` and `capOutput.ts`.
-- **Two new MCP resources** — `action1://groups/{orgId}` and
-  `action1://reports`.
-- **Resource cap-and-truncate** — every list-shaped resource is now
-  capped at ~400 KB and emits a structured truncation note pointing at
-  the equivalent paginated tool.
-- **Skill-format Tool descriptions** with `Args / Returns / Examples /
-  Error Handling` sections on all curated tools.
-- **All four annotations explicit** on every tool (`readOnlyHint`,
-  `destructiveHint`, `idempotentHint`, `openWorldHint`).
-- **Skill-format evaluation suite** in `evals/action1-eval.xml` with
-  10 multi-hop questions and a README explaining the
-  operator-fill-in flow.
-- **Three new test categories** — integration (`tests/integration/`,
-  driving the McpServer through the SDK in-memory transport pair),
-  security (`tests/security/`, destructive-guard truth table +
-  redaction matrix), performance (`tests/performance/`, capItemList /
-  markdown-table scaling). 170 tests up from 85.
-- **`actionableError(message, suggestion)` helper** + `runTool` now
-  branches `z.ZodError` and `AbortError` into actionable messages.
-- **`okStatusOutputShape`** in `src/tools/helpers.ts` for destructive
-  endpoints whose 200 response carries no meaningful body.
-- **Server-side filter coverage on curated `action1_list_endpoints`** —
-  9 new filter params (`sortby`, `filter`, `status`, `online_status`,
-  `update_status`, `vulnerability_status`, `reboot_required`, `os`,
-  `reset_cache`) forwarded directly to the Action1 API, so the agent
-  no longer has to walk the full list just to filter.
-- **`admin` filter on `action1_list_organizations`** and
-  **`applicable_to` filter on `action1_list_action_templates`** —
-  small but completes the 1:1 parameter coverage of the curated tools'
-  underlying OpenAPI ops.
-- **Org-wide vulnerabilities tool** —
-  `action1_list_org_vulnerabilities` (auto-generated) exposes the
-  org-level `/vulnerabilities/{orgId}` endpoint with all 13 server-side
-  filter params (CVE-IDs, score range, published date, remediation
-  status, …), separate from the per-endpoint
-  `action1_list_vulnerabilities` curated tool.
-- **`action1_endpoints_summary`** and **`action1_automations_summary`**
-  curated aggregation tools — server-side counters that walk the full
-  data set and return ~1 KB of metrics instead of paginating through
-  thousands of items just to count.
-- **Markdown-injection defence in cell rendering** —
-  `escapePipes` now also escapes `[`, `]`, `<`, `>`, `\\` and CR/LF in
-  every cell value. Defuses `[link](url)`, image, and HTML-tag
-  injection vectors when an Action1 string contains
-  attacker-controlled Markdown syntax.
-- **CSV-injection defence in `action1_report_export`** — cells whose
-  first non-whitespace character is `=`, `+`, `-`, `@`, TAB, or CR get
-  prefixed with a single quote so Excel / Google Sheets honour them as
-  literal text rather than formulas.
-- **`outputSchema` on every curated tool** — execute / wait / get-* /
-  summary / wrapper tools all now declare their result shape (one of
-  `cursorListOutputShape`, `listOutputShape`, `singleObjectOutputShape`,
-  `okStatusOutputShape`).
-- **`safeResourceRead` wrapper** on every MCP resource — downstream
-  errors return a structured `{ error, status?, hint? }` JSON payload
-  instead of bubbling up as a JSON-RPC `-32603` (which some hosts
-  render as a hard crash).
-- **Permission tag extraction now catches the
-  "Requires one of the following permissions:" form** — the previous
-  regex missed it, so 7 generated tools were silently losing their
-  Permissions: footer in the structured description.
-- **Centralised `defaultName` / `humanize` helpers** in
-  `src/payloads/shared.ts` (was duplicated in the Win/Mac payload
-  builders). Plus a centralised `sleep(ms, signal?)` helper in
-  `src/utils/sleep.ts` (was duplicated in `client/retry.ts` and
-  `tools/workflows.ts`).
-- **170 tests across 4 categories** (was 85) — added `cursor.test.ts`
-  (12 tests for buildCursor / parseCursor / fingerprintQuery /
-  pagedFetch incl. fingerprint-mismatch and byte-cap) and
-  `retry.test.ts` (9 tests for `withRetry` and
-  `isTransientNetworkError`).
+- New tool `action1_create_approval` (`POST /updates/{orgId}/approvals`):
+  approve or decline update packages in bulk. Destructive and guarded.
+- `action1_run_script` accepts an optional `os` (`"windows"` or
+  `"macos"`). It is required with `target_type: "EndpointGroup"`; for a
+  single endpoint it must match the detected OS.
+- `ACTION1_TOOLSETS` (`all`, `read`, `curated`; comma-separated values
+  intersect) registers a smaller tool set. The default is still all
+  tools.
+- `ACTION1_REDACT_PII=true` masks personal data in tool results,
+  resource reads and the JSON body of upstream error texts: user names,
+  IP addresses (also `*_ip` keys such as `current_ip`), e-mail addresses
+  (also `*_email` and `closure_requested_by`), MAC and other addresses
+  (`*_address`, such as `external_address`), serial numbers, personal
+  names and Active Directory (`AD_*`) fields. A test derives the
+  personal-data properties from the vendored spec. Keys are compared
+  with spaces and hyphens as `_`, so report row columns such as
+  `User Name`, `IP Address` and `Logged On User` are masked too, and the
+  matching columns of CSV exports are masked by their header.
+- `ACTION1_REQUEST_TIMEOUT_MS` (default 60000) and
+  `ACTION1_TOKEN_TIMEOUT_MS` (default 15000, per OAuth attempt). Transient
+  token failures are retried a bounded number of times; credential errors
+  are not.
+- `MCP_HTTP_ALLOWED_HOSTS` and `MCP_HTTP_ALLOW_NO_AUTH` for the HTTP
+  transport; `TRUST_PROXY` is part of the validated configuration.
+- Operational logging and an audit trail on stderr: one `tool_call` line
+  per call (tool, duration, outcome, upstream status, attempts, org,
+  caller, error) with a `request_id` shared by every line of that call,
+  `upstream_retry` lines, `guard_config` at startup, and the audit events
+  `destructive_dry_run`, `destructive_refused` (with reason),
+  `destructive_executed` (written right before the state-changing request
+  is sent, with `body_sha256` of the request body; never when a
+  pre-flight check such as the reboot connectivity probe aborts the
+  call), `action_started`, and `http_auth_failed`, `http_host_rejected`,
+  `http_origin_rejected` and `http_rate_limited` (throttled per client,
+  never the token). The caller is `stdio`, or over HTTP the remote IP,
+  user agent and a SHA-256 token id. Audit events are written regardless
+  of `ACTION1_LOG_LEVEL`.
+- `action1_execute_and_wait` and `action1_wait_for_automation` send MCP
+  progress notifications after every poll when the client sends a
+  `progressToken`. `action1_execute_and_wait` announces the
+  `instance_id` right after the start: in an `action_started` audit line,
+  and in a progress notification before the first poll.
+- `GET /readyz` readiness endpoint (version, configuration and token
+  state, 503 when not ready, no upstream call); `/healthz` reports the
+  version.
+- Named output-schema fields for generated tools (including the dry-run
+  preview fields of destructive tools) and for the curated summary,
+  result and plan tools.
+- `src/spec`, generated from the spec by `npm run codegen`: the field
+  names and enum values the curated tools read, with a contract test that
+  checks each of them against the spec.
+- `npm run live:shapes` (`scripts/live-shape-check.mjs`): a read-only,
+  anonymized check of the record shapes a live tenant returns, for the
+  tenant owner to run.
+- CycloneDX SBOMs for the MCPB bundle
+  (`dist/action1-mcp-<version>.mcpb.cdx.json`) and the npm tarball
+  (`dist/action1-mcp-server-<version>.tgz.cdx.json`), both written by
+  `scripts/build-mcpb.sh`, attached to GitHub releases and listed in
+  `SHA256SUMS`. They carry the SHA-512 hash and registry URL of every
+  component and are reproducible: the timestamp comes from
+  `SOURCE_DATE_EPOCH`, the serial number is derived from the content.
+- `docs/permissions.md`, generated from the permission tags of the pinned
+  spec.
+- `npm run spec:fetch` and `npm run spec:check`, and a weekly workflow
+  that reports when Action1 serves a different spec than the pinned one.
+- `--help` lists every environment variable from the same table the
+  configuration is validated against; `--version` prints the version.
+- Community files: `NOTICE`, `CODE_OF_CONDUCT.md`, issue and pull request
+  templates, architecture decision records in `docs/adr/`.
 
 ### Changed
 
-- **Server name → `action1-mcp-server`** (per skill convention
-  `{service}-mcp-server`). Touches `package.json`, `src/server.ts`,
-  `mcpb/manifest.json`, the `/healthz` `service` field.
-- **Bumped to v0.3.0** across `package.json`, `src/server.ts`,
-  `mcpb/manifest.json`.
-- **HTTP body limit lowered to 1 MB** (was 4 MB). Matches the MCP host
-  per-message wire limit.
-- **HTTP transport hard-fails on non-loopback bind without an Origin
-  allowlist** (was: warn-only). Skill DNS-rebinding guidance.
-- **HTTP transport now also validates the `Host` header** when an
-  Origin allowlist is configured. Closes the second half of the
-  DNS-rebinding gap that origin-only checks leave open.
-- **Origin / Host check now runs BEFORE bearer-auth** (was: after).
-  Stops DNS-rebinding probes from even reaching the auth layer.
-- **Loopback recognition handles `[::1]`** (the bracketed IPv6 form
-  used in URL bind-strings), not just `::1`.
-- **`ACTION1_BASE_URL` requires `https://`** and rejects known
-  metadata-service hosts (169.254.169.254, metadata.google.internal).
-  Defence against operator misconfiguration that would send OAuth
-  tokens unencrypted or to a wrong endpoint.
-- **Logger redaction expanded** — bare JWTs (no `Bearer ` prefix) and
-  URL-embedded basic-auth credentials (`https://user:pw@host`) now
-  match the redact patterns.
-- **`Action1ApiError.toToolErrorText()` and `Action1AuthError`
-  constructor** now run their body through `redactString` before
-  composing the tool-output message — removes a subtle credential-leak
-  path where a 401 response body that echoed `client_id` could land in
-  the LLM's view of the tool error.
-- **`action1_list_vulnerabilities` now wraps in `runTool`** — the
-  re-throw branch was bypassing the standard error pipeline.
-- **`action1_search_endpoints` uses `buildCursor()` for next-cursor
-  emission** — was hand-rolling the base64 of `{from, q}`, drifting
-  silently from `parseCursor`'s contract.
-- **Refresh-token cache is cleared after a refresh failure** so we
-  don't keep retrying a known-dead refresh token until the next cold
-  cache expiry.
-- **Generated POST tools whose title doesn't begin with a read-verb
-  no longer get classified as read-ish**. The previous regex matched
-  on `title + description`, which meant POST endpoints whose
-  description happened to mention "list" or "GET" (e.g.
-  "/policies/schedules/{}/post" → title "Create a automation
-  schedule", description "list of endpoints") were silently bypassing
-  the destructive guard. Now the check is a strict allowlist on the
-  title prefix only — no false positives.
-- **`pagedListResult` / `cappedListResult` always emit `total`** on
-  successful responses (was: optional). Skill pagination shape.
-- **README** rewritten to reflect skill conformance, the new test
-  surface, and the rate-limit / required-permissions sections.
+- Adopted the current Action1 OpenAPI spec (2026-10-26): one new
+  operation, 429 responses, `orgIdOrAll` on more reads, CVSS 4.0 fields,
+  and the NA-2 and UK regions in the server list.
+- Migrated to the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`,
+  `@modelcontextprotocol/node`) and zod 4. The server serves MCP
+  revision 2026-07-28 on stdio and HTTP next to the 2025 revisions;
+  2025-06-18 and 2025-11-25 clients negotiate as before. Advertised
+  schemas use JSON Schema draft 2020-12, integer inputs advertise
+  safe-integer bounds, the v1-only `execution.taskSupport` field is gone,
+  and validation messages follow zod 4 wording. See
+  [ADR 0001](docs/adr/0001-mcp-sdk-version.md).
+- HTTP transport: malformed JSON returns 400, a body over 1 MB 413,
+  `GET`/`DELETE /mcp` 405 with `Allow: POST`, and a non-JSON content type
+  415. JSON-RPC batches larger than 100 messages are rejected.
+- Generated write tools carry request-body schemas from the spec;
+  generated read tools list the documented response properties in their
+  `outputSchema` (values unconstrained, so no response is rejected),
+  without descriptions that only repeat a type name. These schemas make
+  the `tools/list` answer larger than in 0.5.0; `ACTION1_TOOLSETS`
+  registers a smaller set where the context budget matters.
+- Paginated generated list tools return `has_more` and `next_cursor` on
+  every call. `from` sets the start offset when no cursor is given, and
+  `limit` caps the items of one call, also when the API returns more
+  items than asked for.
+- Generated tool titles are imperative ("List roles"), and descriptions no
+  longer cut off complete sentences.
+- Every generated POST/PUT/PATCH/DELETE operation is guarded unless it is
+  on a reviewed allowlist (empty); the title heuristic is gone.
+- Reads (GET/HEAD) also retry on undici header and body timeouts. Errors
+  after `action1_execute_and_wait` started an action name the
+  `instance_id` and point to `action1_wait_for_automation`.
+- Every list walk, curated and generated, follows Action1's ResultPage
+  envelope (`next_page` / `total_items`), so a server-capped page size no
+  longer ends a walk early. `action1_endpoints_summary`,
+  `action1_list_missing_updates`, `action1_list_vulnerabilities` and
+  `action1_report_export` (json) stream their data instead of loading it
+  all first.
+- `action1_list_endpoints` accepts `reboot_required` as `Yes` / `No` in
+  any case and sends the spec value, sends `reset_cache` as `Yes` / `No`,
+  and describes `filter` as the spec's case-insensitive substring filter.
+- `action1_audit_log_search` accepts `from_time` / `to_time` as
+  `YYYY-MM-DD_HH-MM-SS` or ISO-8601, sends them to Action1 as `timefrom`
+  / `timeto`, and scans a bounded number of pages per call (resumable
+  with `next_cursor`).
+- The MCPB bundle is listed as "Action1 MCP (Community)" with an
+  unofficial-project notice, ships `LICENSE` and `NOTICE`, and shows
+  "Allow destructive operations" as a checkbox (a boolean field; a value
+  stored by an older bundle is still read). The bundle is bit-for-bit
+  reproducible (sorted entries, fixed modes, one timestamp from
+  `SOURCE_DATE_EPOCH`, by default the commit time), and its
+  `server/package.json` no longer lists devDependencies.
+- Configuration errors at start-up print one line per problem (no stack
+  trace) before the JSON `fatal` record and exit with code 1.
+- `npm run build` is plain `tsc` and emits no source maps, so the npm
+  tarball no longer ships maps that point at `src/` files it does not
+  contain. In 0.5.0 a `prebuild` step ran lint,
+  typecheck and the unit tests first; run `npm run check` for those.
+  `docs/DEPLOYMENT.md` runs `npm prune --omit=dev` after the build for
+  production installs and updates.
+- The npm publish job (still off by default) publishes the tarball built
+  and checksummed by the build job and installs nothing while it holds
+  `id-token`.
+- The server version is read from `package.json` everywhere (initialize,
+  `/healthz`, `--help`); the MCPB manifest is held to the same version
+  by a test.
+- Dependencies: express 4.22.3 or newer; dev tooling updated (ESLint 10,
+  TypeScript 6.0, vitest 5, prettier 3.9, tsx 4.23, `@types/node` 22).
 
 ### Fixed
 
-- **Markdown table truncation could overshoot the cap by ~50 bytes**
-  due to the trailing "more rows omitted" + meta-line. The renderer
-  now reserves a 200-byte trailer budget so the output stays under the
-  cap.
-- **Codegen agent / runtime alignment** — runtime accepts an optional
-  `responseFormat` parameter routed to the result helpers (was: hard
-  default).
-- **Slash-prompts updated to the verb-first tool names** —
-  `/patch-windows-fleet` and `/check-my-permissions` referenced
-  pre-rename tool names that no longer exist.
-- **Type-safe filtering** in `src/tools/wrappers/index.ts` — replaced
-  `.filter(...).map(g => ({ id: g.id as string }))` patterns with
-  proper type predicates so TypeScript narrows the result without the
-  `as` cast.
-- **`as unknown as { ... }` double-casts removed** from
-  `src/client/action1Client.ts` — `Action1ApiError` now declares the
-  `retryAfterMs` / `code` / `cause` fields directly so the wrappers
-  don't need to bypass the type system.
-- **`@typescript-eslint/no-explicit-any` upgraded from warn → error**
-  in `eslint.config.js`. The codebase already had no `any` usage; this
-  prevents accidental introduction.
+- The dry-run preview shows the request body at every depth. It cut
+  values below six levels to `"[truncated]"`, which hid the update
+  filters (`actions[].params.filters[].values[]`) of automation bodies
+  from the person confirming them.
+- `action1_cve_remediation_plan` with `cve_id` reads every affected
+  endpoint; `max_items` capped the endpoint walk although it counts plan
+  entries. A plan that leaves something out (more vulnerabilities than
+  `max_items`, more affected endpoints than listed) now says so with
+  `truncated: true` and a `warning`.
+- `action1_automations_summary` reports `has_more: true` and a `note`
+  when `max_scan` stopped the walk before the last instance, and the
+  server instructions no longer say that it walks all data.
+- The server instructions and the `auto_confirm_enabled` warning said
+  that with `ACTION1_DESTRUCTIVE_AUTO_CONFIRM=true` `dry_run` defaults to
+  false. It never did, in 0.5.0 neither: `dry_run` defaults to `true` in
+  every mode, and auto-confirm only drops the per-call `confirm`. Both
+  texts are now generated from the guard policy; the behaviour is
+  unchanged.
+- `action1_wait_for_automation` and `action1_execute_and_wait` treat the
+  spec status `Warning` as final instead of polling until the timeout.
+  `action1_automations_summary` reports `warning_count` and counts
+  `Error` and `Stopped` as failures.
+- `action1_endpoints_summary` counts endpoints with `reboot_required`
+  `"Yes"` (the spec value).
+- `action1_software_inventory_for_endpoint` `find_by_name` matches the
+  spec's `fields.Name`; `find_by_name`, `action1_recurring_schedules` and
+  `action1_audit_log_search` with filters search every upstream page,
+  not only the first.
+- `action1_audit_log_search` filters on the spec's `user_name`, `event`,
+  `object_name` and `timestamp` format.
+- `action1_cve_remediation_plan` reads `endpoint_id`, takes the fixing
+  packages (id and version) from the CVE's `available_updates`, and marks
+  each entry with `correlation`. The `endpoint_id` path uses the
+  documented `GET /vulnerabilities/{orgId}?endpoint_id=`. It reports an
+  error when reading missing updates fails (only 403/404 become a
+  `warning`), and reads them once per endpoint.
+- Client cancellation (`notifications/cancelled`) and a closed HTTP
+  connection abort the upstream calls of every tool and resource read.
+- `action1_run_script` with `target_type: "EndpointGroup"` works (with
+  `os`); before, it always failed with a 404 lookup error. The
+  `/run-script-fleetwide` prompt prescribes `os`.
+- Markdown list output no longer drops rows, columns or the cursor without
+  saying so; `next_cursor` is printed in full and resumes at the next row;
+  hidden columns are named.
+- `total` on the last page of a cursor walk is the total of the whole
+  walk; it is omitted while more pages follow.
+- `action1_search_endpoints` no longer skips matches at a page boundary
+  and rejects cursors of other queries.
+- The hint to pass `verbose: true` appears only when items were
+  compacted, and only on tools that have the parameter.
+- A single record larger than the page budget becomes a
+  `__truncated_item` placeholder instead of an endless empty page; every
+  result stays under the 1 MB host limit with visible truncation markers.
+- A `.env` copied from `.env.example` starts: empty values count as unset
+  everywhere (`HOST=` means `127.0.0.1`), and `ACTION1_LOG_LEVEL` is
+  case-insensitive.
+- The npm bin (`npx`, `npm install -g`) starts the server through the
+  symlink npm creates instead of exiting silently.
+- A non-JSON OAuth token response gives a clear `Action1AuthError`.
+- The log throttle no longer drops notice, warning, error or critical
+  lines; fatal startup errors and uncaught exceptions are logged as
+  critical JSON lines.
+- The auto-confirm startup warning also fires for values such as
+  `TRUE ` and is logged once per process.
+- `action1_execute_and_wait` reports a failed start with the Action1
+  error text and the masked upstream response body. A 4xx start error
+  no longer claims that the action may have started; that note stays for
+  5xx answers, timeouts and connection errors.
+- `ACTION1_LAST_SEEN_STALE_MINUTES` also applies to
+  `connectivity.online` of `action1_get_endpoint` and to the fresh /
+  stale counts of `action1_endpoints_summary`, not only to the offline
+  check before an action.
 
-### Acknowledged limitation
+### Removed
 
-- **`.strict()` Zod input schemas** are documented but not enforced —
-  the SDK's high-level `registerTool` API surfaces a `ZodRawShape`
-  which is `z.object(shape).safeParse(...)`-d *non*-strictly. Passing
-  `z.object(shape).strict()` instead would honour strict but the
-  handler's `args` becomes `unknown` (per the SDK overload), losing
-  type inference. The skill's typo concern is mitigated in practice
-  because our destructive guard checks the actual `confirm` field —
-  silent extras don't bypass the gate. See the comment block in
-  `src/tools/helpers.ts` for the full trade-off.
+- The unused `OrgResolver` (organization names were never resolved;
+  `org_id` takes a UUID).
+- Obsolete `esbuild` and `hono` overrides.
 
-## [0.2.0]
+### Documentation
 
-Initial public release. 100 % Action1 OpenAPI 3.1.0 coverage with
-pinned SHA, hybrid architecture (curated + auto-generated + workflow
-wrappers), three-layer destructive guard, stdio + Streamable HTTP
-transports, Docker / GHCR / MCPB packaging, CI on Node 20 + 22.
+- README: unofficial-project notice, maintenance status, validation
+  status (the read-only live shape check of 2026-10-26, and which
+  destructive tools were never run against a live tenant), MCPB from
+  GitHub Releases as the main install path, all five Action1 regions;
+  npm is marked as not published.
+- FAQ: on the stateless 2025-era HTTP transport a call is cancelled by
+  closing its HTTP request; a `notifications/cancelled` sent in a
+  separate request does not reach it.
+- CONTRIBUTING: the dev tools (ESLint 10) need Node 22.13 or newer while
+  the runtime floor stays 22.12, and `build:mcpb` needs Git Bash on
+  Windows.
+- `docs/403-investigation.md` names the correct HTTP methods of the
+  endpoint routes; ADR 0001 describes the production consumer only by
+  its verified protocol behaviour.
+- `CODE_OF_CONDUCT.md` names a confidential reporting route (a private
+  GitHub security advisory or a request for a private channel), and
+  `docs/maintainers/repo-settings.md` lists the prerequisites of npm
+  provenance (public repository, first publish, trusted publisher).
+- USAGE documents every curated tool and each of its parameters,
+  including `action1_endpoints_summary` and
+  `action1_automations_summary`; a test holds it to `tools/list` and
+  checks the arguments of every documented tool call.
+- SECURITY: supported versions, best-effort reporting, threat model with
+  indirect prompt injection, data sent to the LLM provider, the audit
+  events and their caller fields, the organization allowlist including
+  enterprise-wide resources, the redirect policy, the served protocol
+  revisions, the live shape check, correct auto-confirm semantics.
+- DEPLOYMENT and INSTALLATION: working HTTP setup on loopback behind a
+  reverse proxy with token, `MCP_HTTP_ALLOWED_HOSTS` and `TRUST_PROXY`; a
+  hardened systemd unit; `/readyz`; the actual MCPB bundle contents.
+  `docs/maintainers/repo-settings.md` lists the repository settings the
+  workflows rely on.
+- `docs/api-coverage-gaps.md` lists what the server does not cover,
+  measured against the pinned spec, instead of a comparison with other
+  projects.
+- `NOTICE` excludes the vendored Action1 spec from the MIT License and
+  names the Action1 trademark.
+- A test flags hand-written tool, test and prompt counts in prose and
+  checks relative links, anchors and the generated coverage table; others
+  hold README's configuration table and the MCPB notes to the validated
+  environment variables.
 
-[Unreleased]: https://github.com/mguttmann/action1-mcp/compare/v0.5.0...HEAD
+### Tests and CI
+
+- A spec-backed fake Action1 API answers every documented operation from
+  its OpenAPI 200 schema; registry-wide sweeps use it: the
+  `action1_raw_request` guard over every method and spec path, a single
+  send on an upstream 502 for every executable write tool, the org
+  allowlist for every tool with `org_id`, `ACTION1_REDACT_PII` over every
+  read tool, executed write, resource and upstream error text, and a
+  schema smoke over every tool and resource. Every answer in
+  `evals/action1-eval.xml` is checked against the running server.
+- The E2E suite starts the bundle from the manifest's `mcp_config` like
+  Claude Desktop does, runs a tool call against a local HTTPS stub,
+  starts `--http` without and with a token, checks the SBOM hashes and
+  that the tarball carries no source maps, and rebuilds once to compare
+  checksums. ESLint also covers `tests/**` and `scripts/*.mjs`.
+- The `tools/list` compatibility test compares tool and input names,
+  required inputs, annotations, output schemas, resources, resource
+  templates and prompt arguments with the v0.5.0 baseline.
+- The tests are type-checked (`npm run typecheck:tests`,
+  `tsconfig.test.json`). The guard, org scope, raw request, HTTP, PII
+  and retry modules have per-file coverage floors. The tests are stable
+  under parallel load. A test keeps em and en dashes out of the tracked
+  files (the vendored Action1 spec excepted).
+- CI: new jobs `node-floor` (exactly Node 22.12) and `cross-os` (bundle
+  build and stdio start on Windows and macOS); E2E on Node 22 and 24;
+  `npm audit signatures`; `mcpb-reproducible` also compares the SBOMs;
+  every job has a time limit.
+
+## [0.5.0] and earlier
+
+0.5.0 (tag `v0.5.0`, 2026-06-14) was the first tagged release.
+Versions 0.2 to 0.4 were development milestones without public tags; the
+repository history was squashed into one commit before 0.5.0. In short,
+those versions built up:
+
+- curated tools for the Action1 workflows with quirks (macOS and Windows
+  script payloads, endpoint detail path, script output filtering) and
+  generated tools for every other operation of a pinned Action1 OpenAPI
+  snapshot;
+- verb-first generated tool names (`action1_update_endpoint` instead of
+  path-derived names, from 0.3.0);
+- the destructive guard (env switch, `confirm`, `dry_run` defaulting to
+  `true`);
+- stdio and stateless Streamable HTTP transports with a bearer token,
+  body limit and rate limit, and an MCPB bundle;
+- resources, slash prompts, `response_format` and output schemas on the
+  tools, Markdown rendering with readable timestamps;
+- redaction of credentials in logs and error texts, CSV and Markdown
+  injection defences, `ACTION1_BASE_URL` validation;
+- graceful shutdown, `Retry-After` and token-lifetime clamps, and the
+  `ACTION1_LAST_SEEN_STALE_MINUTES` and `TRUST_PROXY` settings.
+
+[Unreleased]: https://github.com/mguttmann/action1-mcp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/mguttmann/action1-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.5.0
-[0.4.2]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.4.2
-[0.4.1]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.4.1
-[0.4.0]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.4.0
-[0.3.0]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.3.0
-[0.2.0]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.2.0

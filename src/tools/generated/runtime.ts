@@ -1,15 +1,21 @@
-import type { Action1Client } from "../../client/action1Client.js";
+// Hand-written runtime shared by every auto-generated tool. NOT generated:
+// `npm run codegen` writes only ./index.ts in this directory and never
+// touches this file. Edit it like any other source file.
+import { assertSafeApiPath, type Action1Client } from "../../client/action1Client.js";
 import { runDestructive } from "../destructiveGuard.js";
 import {
-  errorResult,
+  cappedListResult,
+  compactionNote,
   jsonResult,
   pagedListResult,
-  type OutputFormat,
+  runTool,
 } from "../helpers.js";
-import { Action1ApiError } from "../../client/errors.js";
+import type { OutputFormat } from "../helpers.js";
+import { assertPayloadOrgsAllowed } from "../orgScope.js";
+import { envelopePage, parsePageEnvelope } from "../../client/pagination.js";
 import { capItemList, compactItem } from "../../utils/capOutput.js";
-import { fingerprintQuery, pagedFetch } from "../../utils/cursor.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { buildCursor, fingerprintQuery, pagedFetch } from "../../utils/cursor.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 
 export interface RunGeneratedOptions {
   client: Action1Client;
@@ -17,9 +23,14 @@ export interface RunGeneratedOptions {
   method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   queryParams?: Record<string, unknown> | undefined;
-  body?: Record<string, unknown> | undefined;
+  body?: unknown;
   autoPaginate?: boolean;
   cursor?: string | undefined;
+  /**
+   * The operation pages with `limit` / `from`. Every call of such a tool
+   * reports `has_more` and `next_cursor`, with or without `cursor`.
+   */
+  paginated?: boolean;
   destructive?: { confirm?: "YES" | undefined; dry_run?: boolean | undefined } | undefined;
   /**
    * Optional output-format hint. When set, list-shaped responses will be
@@ -33,51 +44,68 @@ export interface RunGeneratedOptions {
    * records. Default false: list-shaped responses are compacted to
    * truncate embedded scripts / EULAs / huge CVE strings before
    * `capItemList` measures them. Single-object responses are
-   * unaffected — the agent rarely fetches a single record without
+   * unaffected - the agent rarely fetches a single record without
    * needing its full body.
    */
   verbose?: boolean | undefined;
   signal?: AbortSignal;
 }
 
+/**
+ * Execute one generated tool call. Errors are mapped to tool results by
+ * the shared `runTool`, so generated and curated tools report failures
+ * the same way.
+ */
 export async function runGenerated(opts: RunGeneratedOptions): Promise<CallToolResult> {
-  try {
+  return runTool(async () => {
+    // Reject empty IDs and dot segments before the destructive guard, so
+    // a dry-run preview never shows a path that would be retargeted.
+    assertSafeApiPath(opts.path);
+    // Org ids inside the body (target_organization_id, organization_ids,
+    // ...) are held to ACTION1_ALLOWED_ORG_IDS like the org_id argument.
+    assertPayloadOrgsAllowed(opts.body);
     const perform = async (): Promise<CallToolResult> => {
-      // GET tools with `cursor` set, OR auto_paginate=true, drive through
-      // pagedFetch so the agent can chain multiple calls to cover any
-      // fleet size. Single-call mode (no cursor, no auto_paginate) stays
-      // the regular request path.
+      // List contract of paginated GET tools: `limit` is the most items
+      // one call returns, `from` the first record when no cursor is
+      // given, and every call reports `has_more` / `next_cursor`. With
+      // `cursor` or `auto_paginate` the call walks upstream pages
+      // (pagedFetch) until `limit` or the response budget; without them
+      // it returns one upstream page (below).
+      const callerLimit = opts.queryParams ? toFiniteNumber(opts.queryParams.limit) : undefined;
+      const callerFrom = opts.queryParams ? toFiniteNumber(opts.queryParams.from) : undefined;
+      const queryWithoutPagination = opts.queryParams
+        ? stripPagination(opts.queryParams)
+        : undefined;
+      const fingerprint = (): string =>
+        fingerprintQuery({ path: opts.path, query: queryWithoutPagination ?? {} });
       if (opts.method === "GET" && (opts.autoPaginate || opts.cursor)) {
-        const callerLimit = opts.queryParams ? toFiniteNumber(opts.queryParams.limit) : undefined;
-        const queryWithoutPagination = opts.queryParams
-          ? stripPagination(opts.queryParams)
-          : undefined;
-        const fp = fingerprintQuery({ path: opts.path, query: queryWithoutPagination ?? {} });
         const result = await pagedFetch<unknown>(
           async ({ from, limit }) => {
-            const raw = (await opts.client.request<unknown>(opts.path, {
+            const raw = await opts.client.request<unknown>(opts.path, {
               method: "GET",
               query: { ...(queryWithoutPagination ?? {}), limit, from },
               ...(opts.signal ? { signal: opts.signal } : {}),
-            })) as { items?: unknown[] } | unknown[];
-            const rawItems = Array.isArray(raw) ? raw : (raw.items ?? []);
+            });
+            const page = envelopePage<unknown>(raw, from, limit);
             // Same per-item compactor as the single-call path: when
             // `verbose !== true`, trim embedded scripts / EULAs / CVE
             // walls before they accumulate across pages. Otherwise
             // auto_paginate would silently bypass the size guard that
             // the non-paginated path enforces.
-            const items = opts.verbose === true
-              ? rawItems
-              : rawItems.map((it) => compactItem(it));
-            return { items, hasMore: rawItems.length === limit };
+            return opts.verbose === true
+              ? page
+              : { ...page, items: page.items.map((it) => compactItem(it)) };
           },
           {
             ...(opts.cursor !== undefined ? { cursor: opts.cursor } : {}),
-            fingerprint: fp,
-            ...(callerLimit !== undefined ? { maxItems: callerLimit } : {}),
+            ...(callerFrom !== undefined ? { startFrom: callerFrom } : {}),
+            fingerprint: fingerprint(),
+            ...(callerLimit !== undefined
+              ? { maxItems: callerLimit, pageSize: Math.min(Math.max(1, callerLimit), 200) }
+              : {}),
           },
         );
-        return pagedListResult(result, opts.responseFormat, opts.verbose);
+        return pagedListResult(result, opts.responseFormat, opts.verbose === true);
       }
       const data = await opts.client.request<unknown>(opts.path, {
         method: opts.method,
@@ -89,39 +117,81 @@ export async function runGenerated(opts: RunGeneratedOptions): Promise<CallToolR
       // list-shaped (Action1 uses {items: [...]} envelopes and bare
       // arrays interchangeably). The agent can switch to cursor mode
       // by re-calling with `cursor: <returned next_cursor>` if any.
-      if (Array.isArray(data)) {
-        return cappedItemsResult(data, opts.responseFormat, opts.verbose);
+      // `limit` is the most items one call returns, also when the
+      // upstream sends more than asked for.
+      const overLimit = (items: unknown[]): boolean =>
+        callerLimit !== undefined && items.length > callerLimit;
+      if (Array.isArray(data) && !opts.paginated && !overLimit(data)) {
+        return cappedListResult(data, opts.responseFormat, opts.verbose === true);
       }
-      if (isObject(data) && Array.isArray(data.items)) {
-        const obj = data;
-        const rawItems = obj.items as unknown[];
+      if (Array.isArray(data) || (isObject(data) && Array.isArray(data.items))) {
+        const obj: Record<string, unknown> = Array.isArray(data) ? { items: data } : data;
+        const upstreamItems = obj.items as unknown[];
+        const limited = overLimit(upstreamItems);
+        const rawItems = limited ? upstreamItems.slice(0, callerLimit) : upstreamItems;
         // Per-item compactor (verbose=false default) trims embedded
         // scripts / EULAs / 100-CVE walls before the size cap kicks
         // in, otherwise a single 50 KB list item burns through the
         // host context after one or two calls.
-        const items = opts.verbose
-          ? rawItems
-          : rawItems.map((it) => compactItem(it));
+        const items = opts.verbose ? rawItems : rawItems.map((it) => compactItem(it));
         const cap = capItemList(items as Record<string, unknown>[]);
-        // `count` is required by listOutputShape — it MUST be set on
-        // every response, not just on truncated ones. The structured
-        // validator otherwise rejects the call with "must have required
-        // property 'count'". Same bug class as the singleObjectOutputShape
-        // production miss: schema and emitter were silently out of sync.
+        if (opts.paginated) {
+          // One upstream page: more exists when the envelope (or a full
+          // page) says so, or when the size cap cut this page. The page
+          // goes through pagedListResult like the cursor path, so a
+          // Markdown table that cannot show every row ends the page
+          // there and next_cursor resumes at the first row not shown.
+          const from = callerFrom ?? 0;
+          const page = envelopePage<unknown>(
+            data,
+            from,
+            callerLimit ?? parsePageEnvelope<unknown>(data).limit ?? Number.POSITIVE_INFINITY,
+          );
+          const hasMore = cap.truncated > 0 || page.hasMore || limited;
+          const resumeAfter = (k: number): string =>
+            buildCursor(from + k, fingerprint(), from === 0 ? k : undefined);
+          const envelope: Record<string, unknown> = { ...obj };
+          for (const k of ["items", "count", "has_more", "next_cursor", "note"]) delete envelope[k];
+          if (cap.truncated > 0) {
+            envelope.total = cap.total;
+            envelope.truncated = cap.truncated;
+          }
+          return pagedListResult(
+            {
+              items: cap.items,
+              count: cap.returned,
+              has_more: hasMore,
+              next_cursor: hasMore ? resumeAfter(cap.returned) : null,
+              resumeAfter,
+            },
+            opts.responseFormat,
+            opts.verbose === true,
+            envelope,
+          );
+        }
+        // `count` is required by listOutputShape, so it is set on every
+        // response, not just on truncated ones; the structured-content
+        // validator rejects a list payload without it.
         const payload: Record<string, unknown> = {
           ...obj,
           items: cap.items,
           count: cap.returned,
         };
+        // Generated read tools have the `verbose` parameter.
+        const compacted = compactionNote(cap.items, opts.verbose === true);
         if (cap.truncated > 0) {
           payload.total = cap.total;
           payload.truncated = cap.truncated;
-          payload.note =
-            "Output truncated to fit the 1 MB host limit. Re-call with `cursor` set + `auto_paginate: true` to walk all pages.";
-        } else if (!opts.verbose) {
-          payload.note =
-            "Per-item heavy fields (embedded scripts, full CVE walls, EULAs) were compacted to keep the host context small. Pass `verbose: true` to receive the raw upstream records.";
         }
+        if (limited) payload.total = upstreamItems.length;
+        const notes = [
+          cap.truncated > 0 ? TRUNCATED_NOTE : undefined,
+          limited
+            ? `Returned the first ${callerLimit} of ${upstreamItems.length} items (limit).`
+            : undefined,
+          compacted,
+        ].filter((n): n is string => n !== undefined);
+        if (notes.length > 0) payload.note = notes.join(" ");
         return jsonResult(payload, payload, opts.responseFormat);
       }
       const structured = isObject(data) ? data : { value: data };
@@ -143,42 +213,19 @@ export async function runGenerated(opts: RunGeneratedOptions): Promise<CallToolR
       );
     }
     return await perform();
-  } catch (err) {
-    if (err instanceof Action1ApiError) {
-      return errorResult(err.toToolErrorText());
-    }
-    if (err instanceof Error) {
-      return errorResult(err.message);
-    }
-    return errorResult(String(err));
-  }
+  });
 }
 
-function cappedItemsResult(
-  items: unknown[],
-  format?: OutputFormat,
-  verbose?: boolean,
-): CallToolResult {
-  const projected = verbose ? items : items.map((it) => compactItem(it));
-  const cap = capItemList(projected as Record<string, unknown>[]);
-  const payload: Record<string, unknown> = { items: cap.items, count: cap.returned };
-  if (cap.truncated > 0) {
-    payload.total = cap.total;
-    payload.truncated = cap.truncated;
-    payload.note =
-      "Output truncated to fit the 1 MB host limit. Refine via `limit` / a more specific filter / a per-id getter.";
-  } else if (!verbose) {
-    payload.note =
-      "Per-item heavy fields (embedded scripts, full CVE walls, EULAs) were compacted to keep the host context small. Pass `verbose: true` to receive the raw upstream records.";
-  }
-  return jsonResult(payload, payload, format);
-}
+const TRUNCATED_NOTE =
+  "Output truncated to fit the 1 MB host limit. Narrow the request with `limit` or a filter.";
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === "object" && !Array.isArray(v);
 }
 
-function stripPagination(q: Record<string, unknown>): Record<string, string | number | boolean | undefined> {
+function stripPagination(
+  q: Record<string, unknown>,
+): Record<string, string | number | boolean | undefined> {
   const out: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(q)) {
     if (k === "limit" || k === "from" || k === "auto_paginate") continue;
@@ -187,7 +234,9 @@ function stripPagination(q: Record<string, unknown>): Record<string, string | nu
   return out;
 }
 
-function stripUndefined(q: Record<string, unknown>): Record<string, string | number | boolean | undefined> {
+function stripUndefined(
+  q: Record<string, unknown>,
+): Record<string, string | number | boolean | undefined> {
   const out: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(q)) {
     if (v === undefined) continue;

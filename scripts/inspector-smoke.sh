@@ -3,10 +3,11 @@
 # Inspector smoke-test for the curated and generated tool surface.
 #
 # Why this exists: TypeScript can't catch structured-content / outputSchema
-# mismatches — both sides are `Record<string, unknown>`-compatible. The
-# Pass-3 audit missed `singleObjectOutputShape` rejecting every counter
-# response, and the cursor-shape `has_more`/`next_cursor` required-field
-# trap. This script runs each read-only tool against a real Action1
+# mismatches - both sides are `Record<string, unknown>`-compatible, so an
+# output schema that rejects a real response (for example a counter
+# response against a too-narrow object shape, or a required
+# `has_more`/`next_cursor` on a non-cursor call) only fails at runtime.
+# This script runs each read-only tool against a real Action1
 # instance via `@modelcontextprotocol/inspector --cli` and flags any
 # `Output validation error` / `Structured content does not match` /
 # crash response. Run it locally before tagging a release; unit tests
@@ -21,9 +22,9 @@
 #   - `dist/index.js` (run `npm run build` first)
 #
 # Exit codes:
-#   0 — every tool either passed schema validation or returned a
+#   0 - every tool either passed schema validation or returned a
 #       non-schema error (permissions / args). Schema is healthy.
-#   1 — one or more tools returned a schema-validation failure or
+#   1 - one or more tools returned a schema-validation failure or
 #       crashed during register/call. Investigate the offending tool.
 
 set +e
@@ -78,7 +79,7 @@ for spec in "${TOOLS[@]}"; do
   for p in "${parts[@]:1}"; do
     args+=("--tool-arg" "$p")
   done
-  result=$(npx --yes @modelcontextprotocol/inspector --cli node --env-file=.env dist/index.js \
+  result=$(npx --yes @modelcontextprotocol/inspector@2.12.0 --cli node --env-file=.env dist/index.js \
     --method tools/call --tool-name "$name" "${args[@]}" 2>&1)
   if echo "$result" | grep -qE 'Output validation error|Structured content does not match'; then
     echo "[SCHEMA-FAIL] $name"
@@ -89,10 +90,10 @@ for spec in "${TOOLS[@]}"; do
     CRASH=$((CRASH+1))
     FAILED+=("$name (crash)")
   elif echo "$result" | grep -qE 'Tool .* not found'; then
-    echo "[404] $name (typo in this script — fix the tool name)"
+    echo "[404] $name (typo in this script - fix the tool name)"
     FAILED+=("$name (404)")
   elif echo "$result" | grep -qE '"isError":\s*true'; then
-    echo "[non-schema] $name (likely permissions / args — schema is healthy)"
+    echo "[non-schema] $name (likely permissions / args - schema is healthy)"
     NON_SCHEMA=$((NON_SCHEMA+1))
   else
     echo "[OK] $name"

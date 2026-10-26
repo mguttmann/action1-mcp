@@ -39,8 +39,10 @@ describe("checkDestructiveGuard", () => {
     const r = checkDestructiveGuard({}, ctx);
     expect(r).not.toBeNull();
     expect(r!.isError).toBeFalsy();
-    expect(r!.structuredContent?.dry_run).toBe(true);
-    expect(r!.structuredContent?.tool).toBe("action1_test");
+    expect((r!.structuredContent as Record<string, unknown> | undefined)?.dry_run).toBe(true);
+    expect((r!.structuredContent as Record<string, unknown> | undefined)?.tool).toBe(
+      "action1_test",
+    );
   });
 
   it("rejects when env is missing even with confirm=YES and dry_run=false", () => {
@@ -60,15 +62,16 @@ describe("checkDestructiveGuard", () => {
     expect((r!.content[0] as { text: string }).text).toContain("confirm");
   });
 
-  it("missing-confirm error message hints at common typos", () => {
-    // Pass-4 review: the typo-detection function was dead code; instead
-    // the error message itself mentions common typos so the agent can
-    // self-correct without the server doing key-fuzzing.
+  it("missing-confirm error message names the argument and the strict-schema behaviour", () => {
+    // Input schemas are strict now: a typo like `confrim` is rejected by
+    // validation before the guard runs, so the message no longer claims
+    // the key was dropped silently.
     process.env.ACTION1_ALLOW_DESTRUCTIVE = "true";
     const r = checkDestructiveGuard({ dry_run: false }, ctx);
     const text = (r!.content[0] as { text: string }).text;
-    expect(text).toContain("confrim");
-    expect(text).toContain("silently dropped");
+    expect(text).toContain('confirm:"YES"');
+    expect(text).toContain("Unknown argument names are rejected");
+    expect(text).not.toContain("silently dropped");
   });
 
   it("returns null (proceed) when env=true, confirm=YES, dry_run=false", () => {
@@ -86,7 +89,7 @@ describe("checkDestructiveGuard", () => {
   });
 
   it("parses 'TRUE\\n' (pasted-from-.env trailing newline) as allowed", () => {
-    // Pass-N audit: the old `process.env.X.toLowerCase() === "true"`
+    // the old `process.env.X.toLowerCase() === "true"`
     // check refused `"TRUE\n"` silently because the literal compare
     // included the newline character. Now we route through
     // loadConfig() which trims before comparing, so the most common
@@ -106,7 +109,7 @@ describe("checkDestructiveGuard", () => {
   });
 
   it("AUTO_CONFIRM=true with dry_run=false waives the per-call confirm but still requires env", () => {
-    // Pass-4 audit hardened the auto-confirm path: dry_run is NEVER
+    // In auto-confirm mode dry_run is NEVER
     // auto-flipped, only the per-call `confirm: \"YES\"` requirement
     // is waived. So with explicit dry_run=false and env=true, the
     // call proceeds without confirm.
@@ -122,7 +125,7 @@ describe("checkDestructiveGuard", () => {
     // This is the safety-net: dry_run-by-default survives auto-confirm.
     const r = checkDestructiveGuard({}, ctx);
     expect(r).not.toBeNull();
-    expect(r!.structuredContent?.dry_run).toBe(true);
+    expect((r!.structuredContent as Record<string, unknown> | undefined)?.dry_run).toBe(true);
   });
 
   it("AUTO_CONFIRM=true still respects an explicit dry_run=true request", () => {
@@ -130,7 +133,7 @@ describe("checkDestructiveGuard", () => {
     process.env.ACTION1_DESTRUCTIVE_AUTO_CONFIRM = "true";
     const r = checkDestructiveGuard({ dry_run: true }, ctx);
     expect(r).not.toBeNull();
-    expect(r!.structuredContent?.dry_run).toBe(true);
+    expect((r!.structuredContent as Record<string, unknown> | undefined)?.dry_run).toBe(true);
   });
 
   it("AUTO_CONFIRM=true does not bypass the env-allow gate (with explicit dry_run=false)", () => {

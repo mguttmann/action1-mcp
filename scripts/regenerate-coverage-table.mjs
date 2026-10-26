@@ -1,32 +1,33 @@
 #!/usr/bin/env node
-// Regenerate `docs/_coverage_table.md` from the live state of the
-// pinned OpenAPI spec + the generated tool index + curated tool names.
+// Regenerate `docs/_coverage_table.md` from the pinned OpenAPI spec, the
+// generated tool index and the curated tool names.
 //
-// Run with: `node scripts/regenerate-coverage-table.mjs`. Output is
-// written in place. Idempotent.
+//   node scripts/regenerate-coverage-table.mjs          write the file
+//   node scripts/regenerate-coverage-table.mjs --check  exit 1 if stale
+//
+// tests/unit/docsConsistency.test.ts runs the same render and fails when
+// the committed file differs, and checks that the curated-name scan here
+// matches the one the code generator uses (src/codegen/naming.ts).
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseGeneratedManifest } from "./generated-manifest.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
-const specPath = join(repoRoot, "src", "codegen", "spec", "openapi.json");
-const generatedPath = join(repoRoot, "src", "tools", "generated", "index.ts");
-const outPath = join(repoRoot, "docs", "_coverage_table.md");
+export const SPEC_PATH = join(repoRoot, "src", "codegen", "spec", "openapi.json");
+export const GENERATED_PATH = join(repoRoot, "src", "tools", "generated", "index.ts");
+export const TOOLS_DIR = join(repoRoot, "src", "tools");
+export const OUT_PATH = join(repoRoot, "docs", "_coverage_table.md");
 
-const spec = JSON.parse(readFileSync(specPath, "utf8"));
-const generated = readFileSync(generatedPath, "utf8");
-
-// Extract operationId -> toolName from the generated index. Each
-// generated tool is registered as `register_<operationId>` and the
-// tool name appears as the second arg to `server.registerTool`.
-const opToTool = new Map();
-const fnRe = /function register_([A-Za-z0-9_]+)\(server: McpServer, client: Action1Client\): void \{[\s\S]*?server\.registerTool\(\s*"([^"]+)"/g;
-let m;
-while ((m = fnRe.exec(generated)) !== null) {
-  opToTool.set(m[1], m[2]);
-}
+// Same patterns as extractCuratedToolNames in src/codegen/naming.ts:
+// direct `server.registerTool("name", ...)` calls and helper specs with
+// `name: "action1_x"`.
+const CURATED_PATTERNS = [
+  /server\.registerTool\(\s*"([^"]+)"/g,
+  /\bname:\s*"(action1_[a-z0-9_]+)"/g,
+];
 
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
@@ -37,59 +38,103 @@ function* walk(dir) {
   }
 }
 
-const toolsDir = join(repoRoot, "src", "tools");
-const curatedNames = new Set();
-const curatedRe = /server\.registerTool\(\s*"(action1_[^"]+)"/g;
-for (const file of walk(toolsDir)) {
-  if (file.includes("/generated/")) continue;
-  if (file.endsWith(".test.ts")) continue;
-  const src = readFileSync(file, "utf8");
-  let cm;
-  while ((cm = curatedRe.exec(src)) !== null) {
-    curatedNames.add(cm[1]);
-  }
-}
-
-const rows = [];
-for (const [path, methods] of Object.entries(spec.paths)) {
-  for (const [methodLc, op] of Object.entries(methods)) {
-    const method = methodLc.toUpperCase();
-    if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method)) continue;
-    const opId = op.operationId;
-    if (!opId) continue;
-    let toolName = opToTool.get(opId) ?? "—";
-    let status = "auto";
-    if (opId === "oauth2_token") {
-      toolName = "(handled by TokenProvider)";
-      status = "skipped";
-    } else if (toolName === "—") {
-      status = "skipped (curated)";
+/** Names of the curated tools: every tool registered outside src/tools/generated/. */
+export function curatedToolNamesFromRepo() {
+  const names = new Set();
+  for (const file of walk(TOOLS_DIR)) {
+    if (file.includes(`${join("tools", "generated")}`)) continue;
+    if (file.endsWith(".test.ts")) continue;
+    const src = readFileSync(file, "utf8");
+    for (const re of CURATED_PATTERNS) {
+      for (const m of src.matchAll(re)) names.add(m[1]);
     }
-    rows.push({ method, path, opId, toolName, status });
   }
+  return names;
 }
 
-rows.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+export function renderCoverageTable(spec, generated, curatedNames) {
+  // operationId -> tool name from GENERATED_TOOL_MANIFEST in the generated index.
+  const opToTool = new Map();
+  const unsupportedOps = new Set();
+  for (const t of parseGeneratedManifest(generated).tools) {
+    opToTool.set(t.operationId, t.name);
+    if (t.unsupported) unsupportedOps.add(t.operationId);
+  }
 
-const tableLines = [
-  "| Method | Path | operationId | Tool | Status |",
-  "|---|---|---|---|---|",
-  ...rows.map((r) => `| ${r.method} | ${r.path} | ${r.opId} | \`${r.toolName}\` | ${r.status} |`),
-];
+  const rows = [];
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [methodLc, op] of Object.entries(methods)) {
+      const method = methodLc.toUpperCase();
+      if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method)) continue;
+      const opId = op.operationId;
+      if (!opId) continue;
+      let toolName = opToTool.get(opId) ?? "-";
+      let status = unsupportedOps.has(opId)
+        ? "auto (returns an unsupported-operation error)"
+        : "auto";
+      if (opId === "oauth2_token") {
+        toolName = "(handled by TokenProvider)";
+        status = "skipped";
+      } else if (toolName === "-") {
+        status = "skipped (curated)";
+      }
+      rows.push({ method, path, opId, toolName, status });
+    }
+  }
 
-const distinctTools = rows
-  .filter((r) => r.toolName !== "—" && !r.toolName.startsWith("("))
-  .length;
+  rows.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
 
-const header =
-  "<!-- AUTO-GENERATED by scripts/regenerate-coverage-table.mjs. Do not edit by hand. -->\n" +
-  "<!-- Run `node scripts/regenerate-coverage-table.mjs` to refresh after a codegen run. -->\n\n" +
-  "# Action1 API <-> MCP Tool Coverage\n\n" +
-  `Spec: \`src/codegen/spec/openapi.json\` (SHA pinned). Total operations: **${rows.length}**.\n` +
-  `Tool surface: **${distinctTools}** generated tool names + **${curatedNames.size}** curated tools.\n\n` +
-  "Curated tools that take precedence over generated equivalents are listed in\n" +
-  "`src/codegen/curated-overrides.ts`. Hand-picked name overrides for awkward\n" +
-  "auto-derived names live in the same file (`NAME_OVERRIDES`).\n\n";
+  const tableLines = [
+    "| Method | Path | operationId | Tool | Status |",
+    "|---|---|---|---|---|",
+    ...rows.map((r) => `| ${r.method} | ${r.path} | ${r.opId} | \`${r.toolName}\` | ${r.status} |`),
+  ];
 
-writeFileSync(outPath, header + tableLines.join("\n") + "\n", "utf8");
-console.log(`Wrote ${rows.length} rows to ${outPath}`);
+  const distinctTools = rows.filter(
+    (r) => r.toolName !== "-" && !r.toolName.startsWith("("),
+  ).length;
+
+  const header =
+    "<!-- AUTO-GENERATED by scripts/regenerate-coverage-table.mjs. Do not edit by hand. -->\n" +
+    "<!-- Run `node scripts/regenerate-coverage-table.mjs` to refresh after a codegen run. -->\n\n" +
+    "# Action1 API <-> MCP Tool Coverage\n\n" +
+    `Spec: \`src/codegen/spec/openapi.json\` (SHA pinned). Total operations: **${rows.length}**.\n` +
+    `Tool surface: **${distinctTools}** generated tool names + **${curatedNames.size}** curated tools.\n\n` +
+    "An operation marked `skipped (curated)` has no generated tool because a\n" +
+    "curated tool covers it: either its generated name equals a curated tool\n" +
+    "name (the code generator, `src/codegen/generate.ts`, drops it) or its\n" +
+    "operationId is in `SKIP_OPERATION_IDS` (`src/codegen/curated-overrides.ts`).\n" +
+    "Hand-picked name overrides for awkward auto-derived names live in\n" +
+    "`NAME_OVERRIDES` in the same file.\n\n";
+
+  return header + tableLines.join("\n") + "\n";
+}
+
+export function renderFromRepo() {
+  const spec = JSON.parse(readFileSync(SPEC_PATH, "utf8"));
+  return renderCoverageTable(
+    spec,
+    readFileSync(GENERATED_PATH, "utf8"),
+    curatedToolNamesFromRepo(),
+  );
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const doc = renderFromRepo();
+  if (process.argv.includes("--check")) {
+    let current = "";
+    try {
+      current = readFileSync(OUT_PATH, "utf8");
+    } catch {
+      // missing counts as stale
+    }
+    if (current !== doc) {
+      console.error(`${OUT_PATH} is out of date. Run: node scripts/regenerate-coverage-table.mjs`);
+      process.exit(1);
+    }
+    console.log(`${OUT_PATH} is up to date.`);
+  } else {
+    writeFileSync(OUT_PATH, doc, "utf8");
+    console.log(`Wrote ${OUT_PATH}`);
+  }
+}

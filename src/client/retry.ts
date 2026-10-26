@@ -75,24 +75,48 @@ function extractRetryAfter(err: unknown): number | undefined {
   return undefined;
 }
 
-const TRANSIENT_NETWORK_CODES = new Set([
+/**
+ * Network failures that provably happened before any byte of the
+ * request reached Action1 (DNS lookup or TCP connect failed). Retrying
+ * these is safe even for non-idempotent methods.
+ */
+const PRE_SEND_NETWORK_CODES = new Set([
   "ENOTFOUND",
   "EAI_AGAIN",
-  "ECONNRESET",
-  "ETIMEDOUT",
   "ECONNREFUSED",
-  "EPIPE",
-  "UND_ERR_SOCKET",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
-export function isTransientNetworkError(err: unknown): boolean {
+/**
+ * Transient network failures in general. The ones not in
+ * PRE_SEND_NETWORK_CODES may happen after the request was sent, so they
+ * are only retried for safe methods (GET/HEAD).
+ */
+const TRANSIENT_NETWORK_CODES = new Set([
+  ...PRE_SEND_NETWORK_CODES,
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "UND_ERR_SOCKET",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+function networkCodeIn(err: unknown, codes: Set<string>): boolean {
   if (typeof err !== "object" || err === null) return false;
   const e = err as { code?: unknown; cause?: { code?: unknown } };
-  if (typeof e.code === "string" && TRANSIENT_NETWORK_CODES.has(e.code)) return true;
+  if (typeof e.code === "string" && codes.has(e.code)) return true;
   if (e.cause && typeof e.cause === "object") {
     const code = e.cause.code;
-    if (typeof code === "string" && TRANSIENT_NETWORK_CODES.has(code)) return true;
+    if (typeof code === "string" && codes.has(code)) return true;
   }
   return false;
+}
+
+export function isTransientNetworkError(err: unknown): boolean {
+  return networkCodeIn(err, TRANSIENT_NETWORK_CODES);
+}
+
+export function isPreSendNetworkError(err: unknown): boolean {
+  return networkCodeIn(err, PRE_SEND_NETWORK_CODES);
 }

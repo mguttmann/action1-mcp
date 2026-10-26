@@ -1,17 +1,60 @@
 #!/usr/bin/env node
+/**
+ * Code generator for the auto-generated Action1 tools.
+ *
+ * Run: `npm run codegen` (tsx src/codegen/generate.ts). Commit the spec,
+ * its SHA and the generated file together; CI's codegen-roundtrip job
+ * re-runs this script and fails on any uncommitted difference.
+ *
+ * Inputs:
+ *   - src/codegen/spec/openapi.json    pinned Action1 OpenAPI 3.1 spec
+ *                                      (refresh: scripts/fetch-spec.mjs,
+ *                                      see src/codegen/spec/SOURCE.md)
+ *   - src/codegen/spec/openapi.sha256  expected SHA-256 of openapi.json
+ *   - src/codegen/curated-overrides.ts skip list, name overrides,
+ *                                      description hints, read-ish allowlist
+ *   - src/tools/** (except generated/) curated tool names, so a generated
+ *                                      tool never shadows a curated one
+ * Output:
+ *   - src/tools/generated/index.ts     one registerTool call per operation,
+ *                                      plus GENERATED_TOOL_MANIFEST and
+ *                                      GENERATED_SKIPPED_OPERATIONS
+ *   - src/spec/generated.ts            field names and enum values the
+ *                                      curated tools read (paths in
+ *                                      src/codegen/specContract.ts)
+ *
+ * The run aborts (nothing is written) when:
+ *   - the spec SHA does not match openapi.sha256 (no silent spec drift),
+ *   - a NAME_OVERRIDES / OPERATION_DESCRIPTION_HINTS key is not an
+ *     operationId of the spec, or a READISH_OPERATION_IDS key is not a POST,
+ *   - a tool name cannot be shortened to the MCP 64-character limit,
+ *   - two emitted tools would get the same name,
+ *   - a path in src/codegen/specContract.ts no longer resolves.
+ *
+ * Invariants the generated file keeps (tested in
+ * tests/integration/generatedTools.test.ts): every POST/PUT/PATCH/DELETE
+ * operation is a destructive tool unless it is on READISH_OPERATION_IDS;
+ * operations the runtime cannot send correctly (non-JSON request body or
+ * required request headers) are emitted as tools that return an error
+ * instead of calling Action1.
+ */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertDescriptionHintsMatchSpec,
   assertNameOverridesMatchSpec,
+  assertReadishOperationsMatchSpec,
   descriptionHintFor,
   isSkipped,
   nameOverrideFor,
+  READISH_OPERATION_IDS,
 } from "./curated-overrides.js";
 import { deriveToolNames, extractCuratedToolNames } from "./naming.js";
-import { emitOutputSchema, inferOutputShape, type OutputShape } from "./outputSchema.js";
+import { inferOutputShape, outputSchemaSource, type OutputShape } from "./outputSchema.js";
+import { resolveContract, specModuleSource } from "./specContract.js";
+import { bodyZodSource, capDescription, paramZodSource, type ParamZod } from "./zodEmit.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..");
@@ -19,28 +62,39 @@ const SPEC_PATH = join(REPO_ROOT, "src", "codegen", "spec", "openapi.json");
 const SHA_PATH = join(REPO_ROOT, "src", "codegen", "spec", "openapi.sha256");
 const OUT_DIR = join(REPO_ROOT, "src", "tools", "generated");
 const OUT_FILE = join(OUT_DIR, "index.ts");
-// Note: the codegen previously also wrote a `PINNED_SHA.ts` constant
-// file next to `openapi.sha256`. That constant was never imported
-// anywhere (verified via grep before removal) and the SHA-pinning
-// invariant is fully covered by:
-//   - `src/codegen/spec/openapi.sha256` (used by `checkSha`)
-//   - `tests/unit/specSha.test.ts` (pins both the .sha256 file
-//     and the SHA line embedded in the generated index.ts header)
-// The dead writer was removed to keep one source of truth for the SHA.
+const SPEC_MODULE_FILE = join(REPO_ROOT, "src", "spec", "generated.ts");
+// The SHA pin has one source of truth, `src/codegen/spec/openapi.sha256`:
+// `checkSha` compares the spec against it (it is never written here), and
+// `tests/unit/specSha.test.ts` pins both the .sha256 file and the SHA line
+// embedded in the generated index.ts header.
 
-// Curated tool source files. The codegen reads these and skips any
-// auto-generated tool whose verb-first name would shadow a curated one.
-const CURATED_SOURCE_FILES = [
-  join(REPO_ROOT, "src", "tools", "orgs.ts"),
-  join(REPO_ROOT, "src", "tools", "endpoints.ts"),
-  join(REPO_ROOT, "src", "tools", "templates.ts"),
-  join(REPO_ROOT, "src", "tools", "automations.ts"),
-  join(REPO_ROOT, "src", "tools", "results.ts"),
-  join(REPO_ROOT, "src", "tools", "workflows.ts"),
-  join(REPO_ROOT, "src", "tools", "execution.ts"),
-  join(REPO_ROOT, "src", "tools", "wrappers", "index.ts"),
-  join(REPO_ROOT, "src", "tools", "groups.ts"),
-];
+// Curated tools live anywhere under src/tools/ except generated/. The
+// codegen scans every .ts file there (no hand-maintained file list) and
+// skips any auto-generated tool whose name would shadow a curated one.
+// tests/integration/generatedTools.test.ts cross-checks the scanned set
+// against the tools the real server registers, so a registration the
+// scanner cannot see fails the test instead of crashing the server at
+// startup with a duplicate-name error.
+const TOOLS_DIR = join(REPO_ROOT, "src", "tools");
+
+export function curatedSourceFiles(dir: string = TOOLS_DIR): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (full === OUT_DIR) continue;
+      out.push(...curatedSourceFiles(full));
+    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+      out.push(full);
+    }
+  }
+  return out.sort();
+}
+
+/** Names of all curated tools, read from the curated source files. */
+export function curatedToolNames(): Set<string> {
+  return extractCuratedToolNames(curatedSourceFiles().map((p) => readFileSync(p, "utf8")));
+}
 
 interface OpenApiSpec {
   openapi: string;
@@ -125,7 +179,7 @@ function snakeCase(s: string): string {
 //
 // The constant lives in `src/constants.ts` so the runtime and the
 // codegen agree; importing it here avoids drift if the cap ever moves.
-import { TOOL_NAME_MAX } from "../constants.js";
+import { MAX_LIST_LIMIT, TOOL_NAME_MAX } from "../constants.js";
 const ABBREVIATIONS: [RegExp, string][] = [
   [/_endpoint_results/g, "_results"],
   [/_deployment_statuses/g, "_deploy_statuses"],
@@ -185,41 +239,91 @@ function fitToolName(name: string): string {
   return result;
 }
 
-// Title-anchored read-ish detector. Only POST endpoints whose **title**
-// (NOT description) clearly starts with a read verb get re-classified
-// as read-only. The previous regex matched anywhere in title+description
-// and falsely included endpoints like "Starting a new remote session"
-// (matched "GET" in a follow-up GET reference) and "Create a automation
-// schedule" (matched "list" in "list of endpoints"). Both bypassed the
-// destructive guard.
-//
-// Whitelist approach instead of regex word-boundary: a POST is only
-// "read-ish" if its title *begins* with one of these verbs.
-const READONLY_TITLE_PREFIXES = [
-  "list",
-  "listing",
-  "search",
-  "searching",
-  "query",
-  "querying",
-  "preview",
-  "previewing",
-  "validate",
-  "validating",
-  "count",
-  "counting",
-  "get",
-  "getting",
-  "fetch",
-  "fetching",
-  "check",
-  "checking",
-];
+// Spec titles mix imperative ("Get user") and gerund ("Getting a
+// specific role") forms. Tool titles are normalised to the imperative.
+// Explicit map instead of stemming so an unknown word is left alone.
+const GERUND_TO_IMPERATIVE: Record<string, string> = {
+  Applying: "Apply",
+  Assigning: "Assign",
+  Changing: "Change",
+  Checking: "Check",
+  Cloning: "Clone",
+  Closing: "Close",
+  Creating: "Create",
+  Deleting: "Delete",
+  Drilling: "Drill",
+  Exporting: "Export",
+  Getting: "Get",
+  Listing: "List",
+  Moving: "Move",
+  Requesting: "Request",
+  Revoking: "Revoke",
+  Searching: "Search",
+  Starting: "Start",
+  Stopping: "Stop",
+  Switching: "Switch",
+  Unassigning: "Unassign",
+  Updating: "Update",
+};
 
-function isReadishPostTitle(title: string): boolean {
-  const t = title.trim().toLowerCase();
-  return READONLY_TITLE_PREFIXES.some(
-    (prefix) => t === prefix || t.startsWith(prefix + " ") || t.startsWith(prefix + "ing "),
+/**
+ * Normalise a spec summary into a tool title: drop the vendor's "TBD:"
+ * placeholder prefix and a trailing period, and turn a leading gerund
+ * into the imperative ("Listing roles" -> "List roles").
+ */
+export function normalizeTitle(summary: string): string {
+  let t = summary
+    .trim()
+    .replace(/^TBD:\s*/i, "")
+    .replace(/\.+$/, "")
+    .trim();
+  const m = /^([A-Z][a-z]+)\b(.*)$/.exec(t);
+  const imperative = m ? GERUND_TO_IMPERATIVE[m[1]!] : undefined;
+  if (m && imperative) t = imperative + (m[2] ?? "");
+  return t;
+}
+
+/**
+ * Destructive classification of one operation. GET/HEAD are read-only;
+ * every other method is destructive unless the operationId is on the
+ * reviewed READISH_OPERATION_IDS allowlist (POST only). Titles are never
+ * consulted: a misleading title must not remove the guard.
+ */
+export function classifyOperation(
+  method: string,
+  operationId: string,
+): { isReadOnly: boolean; isDestructive: boolean } {
+  const m = method.toUpperCase();
+  const isReadOnly = m === "GET" || m === "HEAD";
+  const isReadish = m === "POST" && READISH_OPERATION_IDS.has(operationId);
+  return { isReadOnly, isDestructive: !isReadOnly && !isReadish };
+}
+
+/**
+ * Why the generated runtime cannot perform this operation, or null. The
+ * runtime sends JSON bodies only and no custom request headers, so a
+ * non-JSON request body or a required header parameter would produce a
+ * request Action1 rejects (or misreads).
+ */
+export function unsupportedReason(
+  toolName: string,
+  bodyContentTypes: string[],
+  requiredHeaders: string[],
+): string | null {
+  const nonJson = bodyContentTypes.filter((ct) => !/^application\/json\b/i.test(ct));
+  const problems: string[] = [];
+  if (bodyContentTypes.length > 0 && nonJson.length === bodyContentTypes.length) {
+    problems.push("a request body of type " + nonJson.join(" / "));
+  }
+  if (requiredHeaders.length > 0) {
+    problems.push("the request header(s) " + requiredHeaders.join(", "));
+  }
+  if (problems.length === 0) return null;
+  return (
+    toolName +
+    " is not supported by this MCP server: the Action1 endpoint needs " +
+    problems.join(" and ") +
+    ", which this server does not send. Use the Action1 console for this step."
   );
 }
 
@@ -236,13 +340,17 @@ interface OpDescriptor {
   hasBody: boolean;
   bodyDescription: string;
   bodyRequired: boolean;
-  bodySchemaName: string | null;
+  bodyZod: string;
+  unsupported: string | null;
   hasPagination: boolean;
   isReadOnly: boolean;
   isDestructive: boolean;
   isIdempotent: boolean;
   outputShape: OutputShape;
+  outputSchema: string;
   permissions: string;
+  /** Zod source per parameter (`in:name`), from paramZodSource. */
+  paramZod: Map<string, ParamZod>;
 }
 
 function shaSync(p: string): string {
@@ -276,13 +384,13 @@ function checkSha(): string {
 // dangling prose.
 //
 // The trailing pattern allows any combination of `.`, whitespace, and
-// ellipsis-dots after the connector — because the lastSpace fallback
+// ellipsis-dots after the connector - because the lastSpace fallback
 // produces "<word>..." which later gets collapsed to "<word>." by
 // buildStructuredDescription. We need to catch both forms here so the
 // detection works pre-collapse.
-// Pass-10 review #3: connector list moved to its own module so test-
-// side dynamic `import("...generate.js")` doesn't trigger this file's
-// top-level `main()` (which writes generated/index.ts to disk).
+// The connector list lives in its own module so tests can import it
+// without loading this file, whose top-level `main()` writes
+// generated/index.ts to disk.
 export { INCOMPLETE_TAIL_CONNECTORS, INCOMPLETE_TAIL_RE } from "./connectors.js";
 import { INCOMPLETE_TAIL_RE } from "./connectors.js";
 
@@ -307,10 +415,10 @@ function dropIncompleteTail(s: string): string {
 }
 
 /**
- * Word-boundary-safe cap for the assembled lead sentence. Previously
- * the lead got hard-sliced at 137 chars + "..." appended, which left
- * mid-word stubs ("...specified custom p...") that the post-processing
- * loop then collapsed to bogus full-stops ("...specified custom p.").
+ * Word-boundary-safe cap for the assembled lead sentence. A hard slice
+ * would leave mid-word stubs ("...specified custom p...") that the
+ * post-processing loop then collapses to bogus full-stops
+ * ("...specified custom p.").
  *
  * Strategy: trim to maxChars, then backtrack one word via `\b\w+\.?$`
  * so the cut lands on a word boundary, then append a single ellipsis
@@ -326,7 +434,7 @@ export function fitLead(s: string, maxChars: number): string {
   // Strip a trailing connector word if present so we don't ship
   // "...for specific…" mid-clause.
   cut = dropIncompleteTail(cut + ".");
-  // dropIncompleteTail re-emits the period — strip it before adding "…".
+  // dropIncompleteTail re-emits the period - strip it before adding "…".
   cut = cut.replace(/[.!?]+$/, "").trimEnd();
   return cut + "…";
 }
@@ -392,7 +500,7 @@ function extractPermissions(desc: string): { permissions: string; rest: string }
 }
 
 /**
- * Build the structured tool description following the skill best practice:
+ * Build the structured tool description:
  *
  *   <summary>. <trimmed description>.
  *
@@ -408,9 +516,9 @@ function buildStructuredDescription(
   operationId: string,
 ): { description: string; permissions: string } {
   // Tool descriptions are repeated in EVERY tools/list response that
-  // Claude Desktop loads into the agent context. Median tool was
-  // 1.5 KB, summed across 134 generated tools that's ~200 KB just
-  // for schema docs. We strip aggressively here:
+  // Claude Desktop loads into the agent context, so across all
+  // generated tools verbose descriptions add up to a large share of
+  // the payload. We strip aggressively here:
   //  - lead: max ~120 chars (summary + at most one summary sentence)
   //  - drop the redundant "Args:" line (the schema lists args)
   //  - drop the "Returns:" boilerplate (output schema is structured)
@@ -419,7 +527,11 @@ function buildStructuredDescription(
   const cleanedRest = rest.replace(/\s+/g, " ").trim();
   let headline = trimToSentence(cleanedRest, 40, 100);
   if (summary && headline) {
-    const norm = (s: string): string => s.replace(/[.!?]+$/, "").trim().toLowerCase();
+    const norm = (s: string): string =>
+      s
+        .replace(/[.!?]+$/, "")
+        .trim()
+        .toLowerCase();
     const firstSentenceMatch = headline.match(/^([^.!?]+[.!?])\s*(.*)$/);
     if (firstSentenceMatch) {
       const firstSentence = firstSentenceMatch[1] ?? "";
@@ -429,11 +541,21 @@ function buildStructuredDescription(
       }
     }
   }
-  let lead = [summary, headline].filter(Boolean).join(". ").replace(/\.\s*\.+/g, ".");
+  let lead = [summary, headline]
+    .filter(Boolean)
+    .join(". ")
+    .replace(/\.\s*\.+/g, ".");
   if (lead.length > 140) {
-    lead = fitLead(lead, 140);
+    // Prefer the last full sentence that fits; cut mid-sentence (with
+    // an ellipsis) only when no sentence boundary lies past 40 chars.
+    const window = lead.slice(0, 141);
+    let boundary = -1;
+    for (const m of window.matchAll(/[.!?](?=\s|$)/g)) {
+      if (m.index >= 40) boundary = m.index;
+    }
+    lead = boundary > 0 ? lead.slice(0, boundary + 1) : fitLead(lead, 140);
   }
-  // Pass-4 Critical #1 (round 2): the headline returned by
+  // The headline returned by
   // trimToSentence can lose its trailing connector along with its
   // period ("...deployed on." → "...deployed"). Joining produces
   // "...deployed" without a closing dot. Naively appending "." would
@@ -443,8 +565,8 @@ function buildStructuredDescription(
   // Iterate up to 3 times so a double-connector ("of the.") gets
   // collapsed to no-tail-and-then-period.
   //
-  // Cluster-D fix: if the lead now ends on a "…" (single-char
-  // ellipsis) from `fitLead`, leave it as-is — appending "." would
+  // A lead that ends on a "…" (single-char ellipsis) from `fitLead`
+  // is left as-is - appending "." would
   // produce "…." which the post-collapse strips back to "…", but
   // would also re-trigger the connector regex. Skip the terminator
   // step when the lead already ends with the ellipsis character.
@@ -463,18 +585,23 @@ function buildStructuredDescription(
   // trailing 1-4-letter lowercase word + period gets dropped and the
   // tail re-terminated with "…" so the agent sees an explicit
   // truncation marker instead of a stub.
-  const stubRe = /\s+[a-z]{1,4}\.$/;
-  if (stubRe.test(lead)) {
+  //
+  // Only when the short word is NOT a genuine sentence end of the spec
+  // text: "Creates a new role." must keep "role." and not become
+  // "Creates a new…".
+  const stubRe = /\s+([a-z]{1,4}\.)$/;
+  const stub = stubRe.exec(lead);
+  if (stub && !endsSentenceIn(stub[1]!, summary + " " + cleanedRest)) {
     lead = lead.replace(stubRe, "…");
   }
 
-  // argNames is no longer rendered — left in the signature so callers
-  // don't have to be updated. Same for outputShape.
+  // argNames and outputShape are not rendered (the input and output
+  // schemas carry them); the parameters stay for the callers.
   void argNames;
   void outputShape;
 
   // Optional curator-authored hint that prepends a sentence pointing
-  // the agent at a curated sibling (Finding 3.3: missing_updates
+  // the agent at a curated sibling (e.g. the missing_updates
   // curated/generated overlap). Hint sits in front of the lead so the
   // agent reads "Filtered/paginated variant of X. Use for ..." before
   // the spec summary.
@@ -487,18 +614,31 @@ function buildStructuredDescription(
   return { description: parts.join(" "), permissions };
 }
 
+/** True when `word` (e.g. "role.") appears in `source` followed by whitespace or the end. */
+function endsSentenceIn(word: string, source: string): boolean {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("(^|\\s)" + escaped + "(\\s|$)").test(source.replace(/\s+/g, " "));
+}
+
 interface RawOp {
   op: OperationObject;
   method: string;
   path: string;
 }
 
-function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
+export interface SkippedOp {
+  operationId: string;
+  method: string;
+  path: string;
+  /** The curated tool that covers this operation. */
+  toolName: string;
+}
+
+function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: SkippedOp[] } {
   // Build the full set of operationIds in the spec FIRST so we can
   // verify that every NAME_OVERRIDES key matches a real op. Without
-  // this check the codegen used to silently emit heuristic names for
-  // overrides whose key didn't match (Pass 2 audit found 8 such
-  // dead-code overrides).
+  // this check an override whose key does not match would be dead code
+  // and the heuristic name would be emitted silently.
   const allOperationIds = new Set<string>();
   for (const methods of Object.values(spec.paths)) {
     for (const op of Object.values(methods)) {
@@ -507,6 +647,11 @@ function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
   }
   assertNameOverridesMatchSpec(allOperationIds);
   assertDescriptionHintsMatchSpec(allOperationIds);
+  const postOperationIds = new Set<string>();
+  for (const methods of Object.values(spec.paths)) {
+    if (methods.post?.operationId) postOperationIds.add(methods.post.operationId);
+  }
+  assertReadishOperationsMatchSpec(postOperationIds);
 
   const raws: RawOp[] = [];
   for (const [path, methods] of Object.entries(spec.paths)) {
@@ -519,16 +664,15 @@ function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
     }
   }
 
-  const curatedSources = CURATED_SOURCE_FILES.map((p) => readFileSync(p, "utf8"));
-  const curatedToolNames = extractCuratedToolNames(curatedSources);
+  const curatedNames = curatedToolNames();
 
   const namesArr = deriveToolNames(
     raws.map((r) => ({ method: r.method, path: r.path })),
-    curatedToolNames,
+    curatedNames,
   );
 
   const out: OpDescriptor[] = [];
-  let skipped = 0;
+  const skipped: SkippedOp[] = [];
   for (let i = 0; i < raws.length; i += 1) {
     const { op, method, path } = raws[i]!;
     let naming = namesArr[i]!;
@@ -543,15 +687,19 @@ function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
       // we want curated to win, override loses). Re-check.
       naming = {
         toolName: override,
-        curatedConflict: curatedToolNames.has(override),
+        curatedConflict: curatedNames.has(override),
       };
     }
     if (naming.curatedConflict) {
-      skipped += 1;
+      skipped.push({ operationId: op.operationId!, method, path, toolName: naming.toolName });
       continue;
     }
+    const toolName = fitToolName(naming.toolName);
 
     const params: ParameterObject[] = (op.parameters ?? []).map((p) => deref(spec, p));
+    const requiredHeaders = params
+      .filter((p) => p.in === "header" && p.required)
+      .map((p) => p.name);
     const declaredPathParams = params.filter((p) => p.in === "path");
     const queryParams = params.filter((p) => p.in === "query");
 
@@ -570,68 +718,69 @@ function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
       }
     }
 
-    const summary = (op.summary ?? op.operationId ?? "").trim();
+    const paramZod = new Map<string, ParamZod>();
+    for (const p of [...pathParams, ...queryParams]) {
+      const paging = p.in === "query" ? PAGING_PARAM_ZOD[p.name] : undefined;
+      paramZod.set(
+        paramKey(p),
+        paging ? { zod: paging, action1Time: false } : paramZodSource(spec, p.schema),
+      );
+    }
+
+    const summary = normalizeTitle(op.summary ?? op.operationId ?? "");
     const rawDescription = op.description ?? "";
 
-    const isReadOnly = method === "GET" || method === "HEAD";
-    // Title-only check (NOT title+description): a POST endpoint whose
-    // *title* begins with a read verb (e.g. "Search …", "Get …"). Avoids
-    // false positives like "Starting a new remote session" or
-    // "Create a automation schedule" (whose description happens to mention
-    // "list of endpoints"), which would otherwise bypass the destructive
-    // guard.
-    const isReadishPost = method === "POST" && isReadishPostTitle(summary);
-    void rawDescription;
-    const isDestructive =
-      !isReadOnly &&
-      !isReadishPost &&
-      (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE");
+    const { isReadOnly, isDestructive } = classifyOperation(method, op.operationId!);
     const isIdempotent =
       method === "GET" || method === "HEAD" || method === "PUT" || method === "DELETE";
 
     const hasBody = Boolean(op.requestBody);
     let bodyDescription = "";
     let bodyRequired = false;
-    let bodySchemaName: string | null = null;
+    let bodyZod = "z.unknown()";
+    let bodyContentTypes: string[] = [];
     if (hasBody && op.requestBody) {
       const rb = deref(spec, op.requestBody);
       bodyRequired = rb.required ?? false;
-      const schema = rb.content?.["application/json"]?.schema;
+      bodyContentTypes = Object.keys(rb.content ?? {});
+      const jsonSchema = rb.content?.["application/json"]?.schema;
+      const schema = jsonSchema ?? rb.content?.[bodyContentTypes[0] ?? ""]?.schema;
       if (schema) {
-        const resolved = isRef(schema) ? schema.$ref.split("/").pop() : "object";
-        bodySchemaName = resolved ?? null;
-        bodyDescription = rb.description
-          ? rb.description + " (schema: " + (resolved ?? "object") + ")"
-          : "Request body (schema: " + (resolved ?? "object") + ")";
+        const name = isRef(schema) ? schema.$ref.split("/").pop() : undefined;
+        bodyZod = bodyZodSource(spec, schema, method);
+        bodyDescription = capDescription(rb.description) || "Request body";
+        if (name) bodyDescription += " (schema: " + name + ")";
+        else if (!jsonSchema) bodyDescription += " (" + bodyContentTypes.join(", ") + ")";
       } else {
         bodyDescription = rb.description ?? "Request body.";
       }
+      // An empty JSON body ({"type": "null"} in the spec) carries nothing.
+      if (bodyZod === "z.null()") bodyZod = "z.unknown()";
     }
+    const unsupported = unsupportedReason(toolName, bodyContentTypes, requiredHeaders);
 
     const rawHasPagination =
-      queryParams.some((p) => p.name === "limit") &&
-      queryParams.some((p) => p.name === "from");
+      queryParams.some((p) => p.name === "limit") && queryParams.some((p) => p.name === "from");
 
-    const outputShape = inferOutputShape(
+    const outputShape = inferOutputShape(spec, op.responses, method, rawHasPagination);
+    const outputSchema = outputSchemaSource(
       spec,
       op.responses,
-      method,
-      rawHasPagination,
+      outputShape,
+      classifyOperation(method, op.operationId!).isDestructive,
     );
 
-    // Pass-9: pagination-input args (auto_paginate, cursor) are only
+    // Pagination-input args (auto_paginate, cursor) are only
     // meaningful when the response is also paginated. Non-JSON export
-    // endpoints (CSV / HTML downloads — audit_export_get,
+    // endpoints (CSV / HTML downloads - audit_export_get,
     // reportdata_*_export_get) accept `limit`+`from` as row-windowing
     // arguments but produce a single blob body. Emitting
-    // `auto_paginate` / `cursor` on those is misleading — the agent
+    // `auto_paginate` / `cursor` on those is misleading - the agent
     // would set them expecting cursor-pagination semantics that
     // never engage. Drop pagination-args when the output is
     // single-shape OR ok-status.
     const hasPagination =
-      rawHasPagination &&
-      outputShape !== "single" &&
-      outputShape !== "ok_status";
+      rawHasPagination && outputShape !== "single" && outputShape !== "ok_status";
 
     // Build the input-arg names list for the structured description.
     const argNames: string[] = [];
@@ -652,16 +801,20 @@ function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
     if (isReadOnly) argNames.push("response_format", "verbose");
     if (isDestructive) argNames.push("confirm", "dry_run");
 
-    const { description, permissions } = buildStructuredDescription(
+    const built = buildStructuredDescription(
       summary,
       rawDescription,
       argNames,
       outputShape,
       op.operationId!,
     );
+    const permissions = built.permissions;
+    const description = unsupported
+      ? "Not supported by this server (see error text). " + built.description
+      : built.description;
 
     out.push({
-      name: fitToolName(naming.toolName),
+      name: toolName,
       operationId: op.operationId!,
       method,
       path,
@@ -673,102 +826,56 @@ function describe(spec: OpenApiSpec): { ops: OpDescriptor[]; skipped: number } {
       hasBody,
       bodyDescription,
       bodyRequired,
-      bodySchemaName,
+      bodyZod,
+      unsupported,
       hasPagination,
       isReadOnly,
       isDestructive,
       isIdempotent,
       outputShape,
+      outputSchema,
       permissions,
+      paramZod,
     });
+  }
+  const seen = new Set<string>();
+  for (const o of out) {
+    if (seen.has(o.name)) throw new Error("Duplicate generated tool name: " + o.name);
+    seen.add(o.name);
   }
   return { ops: out, skipped };
 }
+
+/**
+ * Paging query inputs. The spec types `limit` as a number with minimum 1
+ * and `from` as an integer without bounds; both count records, so they
+ * are advertised and enforced as integers, `limit` within
+ * [1, MAX_LIST_LIMIT] and `from` from 0, and invalid values never reach
+ * the API.
+ */
+const PAGING_PARAM_ZOD: Record<string, string> = {
+  limit: `z.number().int().min(1).max(${MAX_LIST_LIMIT})`,
+  from: "z.number().int().min(0)",
+};
 
 function tsLiteral(s: string): string {
   return JSON.stringify(s);
 }
 
-// Param-description char cap. We previously used 60 which produced
-// truncations like "Specify the severity level, e" — cutting a phrase
-// mid-word ahead of the actual enum hint. 90 chars is enough for the
-// common Action1 param descriptions (median ~50 chars) and gives room
-// to fit "Specify the severity level, e.g. Critical." in full.
-const PARAM_DESC_MAX = 90;
+function paramKey(p: ParameterObject): string {
+  return p.in + ":" + p.name;
+}
 
-function emitParamSchema(p: ParameterObject): string {
-  // Aggressive cap on param descriptions — these are the single
-  // biggest contributor to tools/list payload bloat. We prefer a
-  // sentence boundary (`. `) within the cap, fall back to a word
-  // boundary, then to a hard char-cap.
-  const fullDesc = (p.description ?? "").replace(/\s+/g, " ").trim();
-  let desc = fullDesc;
-  if (desc.length > PARAM_DESC_MAX) {
-    // 1) sentence-boundary cut: prefer the first `. ` that lands inside
-    //    the cap (keeps the description grammatically complete).
-    const slice = desc.slice(0, PARAM_DESC_MAX);
-    const sentenceCut = slice.search(/\.\s/);
-    if (sentenceCut > 0) {
-      desc = slice.slice(0, sentenceCut + 1);
-    } else {
-      // 2) word-boundary fallback: cut at last whitespace inside the cap
-      //    to avoid mid-word truncation.
-      const lastSpace = slice.lastIndexOf(" ");
-      if (lastSpace > 30) {
-        desc = slice.slice(0, lastSpace) + "...";
-      } else {
-        // 3) hard cap — extremely rare (single very long word).
-        desc = desc.slice(0, PARAM_DESC_MAX - 3) + "...";
-      }
-    }
-  }
-  if (!desc) desc = p.name;
+function emitParamSchema(p: ParameterObject, op: OpDescriptor): string {
+  // Param descriptions are the single biggest contributor to tools/list
+  // payload size; capDescription keeps them at a sentence or word
+  // boundary within 90 characters.
+  const desc = capDescription(p.description) || p.name;
   const required = p.required ?? p.in === "path";
-  let zod = zodFromSchema(p.schema);
+  let zod = op.paramZod.get(paramKey(p))?.zod ?? "z.string()";
   zod += ".describe(" + tsLiteral(desc) + ")";
   if (!required) zod += ".optional()";
   return snakeCase(p.name) + ": " + zod;
-}
-
-function zodFromSchema(s: SchemaObject | undefined): string {
-  if (!s) {
-    // Untyped query/path params land here. HTTP query-string semantics
-    // are string-by-wire — emitting `z.unknown()` was a bug: the
-    // runtime then ran the value through `toQueryValue` which would
-    // `JSON.stringify` non-scalars and produce gibberish like
-    // `?status={"foo":1}`. Default to `z.string()` so the agent sees
-    // a stringly-typed schema, matching the actual wire format.
-    if (typeof process !== "undefined" && process.stderr?.write) {
-      // Codegen-time warning so a future maintainer sees that a spec
-      // field lacks a type. Stays in stderr; doesn't fail the build.
-      process.stderr.write(
-        "codegen: untyped param schema — defaulting to z.string() (HTTP query-string semantics).\n",
-      );
-    }
-    return "z.string()";
-  }
-  if (s.enum && s.enum.length) {
-    return "z.enum([" + s.enum.map(tsLiteral).join(", ") + "])";
-  }
-  switch (s.type) {
-    case "string":
-      if (s.format === "uuid") return "z.string().uuid()";
-      if (s.format === "date-time") return "z.string().datetime()";
-      return "z.string()";
-    case "integer":
-      return "z.number().int()";
-    case "number":
-      return "z.number()";
-    case "boolean":
-      return "z.boolean()";
-    case "array":
-      return "z.array(" + (s.items ? zodFromSchema(isRef(s.items) ? undefined : s.items) : "z.string()") + ")";
-    default:
-      // Unknown OpenAPI `type` value — for query params, fall back to
-      // the same string default for the same reason as the no-schema
-      // branch above.
-      return "z.string()";
-  }
 }
 
 function safeName(s: string): string {
@@ -789,33 +896,34 @@ function emitTool(op: OpDescriptor): string {
   }
 
   if (orgIdSourceName) {
-    inputProps.push(
-      'org_id: z.string().min(1).optional().describe("Org UUID.")',
-    );
+    inputProps.push('org_id: z.string().min(1).optional().describe("Org UUID.")');
   }
 
   for (const p of op.pathParams) {
     if (p.name === orgIdSourceName) continue;
-    inputProps.push(emitParamSchema(p));
+    inputProps.push(emitParamSchema(p, op));
   }
 
   for (const p of op.queryParams) {
-    inputProps.push(emitParamSchema(p));
+    inputProps.push(emitParamSchema(p, op));
   }
 
   if (op.hasPagination) {
+    // List contract (src/tools/generated/runtime.ts): every call reports
+    // has_more / next_cursor; limit caps the items of one call.
     inputProps.push(
-      'auto_paginate: z.boolean().optional().describe("Walk all pages.")',
+      'auto_paginate: z.boolean().optional().describe("Walk pages until limit or the size budget; then continue with next_cursor.")',
     );
     inputProps.push(
-      'cursor: z.string().optional().describe("Pagination cursor.")',
+      'cursor: z.string().optional().describe("next_cursor of the previous call; takes precedence over from.")',
     );
   }
 
   if (op.hasBody) {
-    const required = op.bodyRequired;
-    let bodyZod = "z.record(z.unknown())";
-    if (!required) bodyZod += ".optional()";
+    let bodyZod = op.bodyZod;
+    // Unsupported operations never send the body; keep the property so
+    // existing callers stay schema-compatible, but do not require it.
+    if (!op.bodyRequired || op.unsupported) bodyZod += ".optional()";
     bodyZod += ".describe(" + tsLiteral(op.bodyDescription) + ")";
     inputProps.push("body: " + bodyZod);
   }
@@ -828,9 +936,7 @@ function emitTool(op: OpDescriptor): string {
     inputProps.push(
       'response_format: z.enum(["markdown","json"]).optional().describe("Output format. Default markdown.")',
     );
-    inputProps.push(
-      'verbose: z.boolean().optional().describe("Skip per-item compactor.")',
-    );
+    inputProps.push('verbose: z.boolean().optional().describe("Skip per-item compactor.")');
   }
 
   if (op.isDestructive) {
@@ -842,7 +948,8 @@ function emitTool(op: OpDescriptor): string {
     );
   }
 
-  // All four annotations explicit, per the MCP-builder skill.
+  // All four annotations are always set explicitly, so hosts never fall
+  // back to their own defaults.
   const annotations: string[] = [
     "readOnlyHint: " + (op.isReadOnly ? "true" : "false"),
     "destructiveHint: " + (op.isDestructive ? "true" : "false"),
@@ -864,12 +971,19 @@ function emitTool(op: OpDescriptor): string {
   const queryExpr = op.queryParams.length
     ? "{ " +
       op.queryParams
-        .map((p) => `[${tsLiteral(p.name)}]: args[${tsLiteral(snakeCase(p.name))}]`)
+        .map((p) => {
+          const arg = `args[${tsLiteral(snakeCase(p.name))}]`;
+          // Date-time values go out in the documented Action1 format.
+          const value = op.paramZod.get(paramKey(p))?.action1Time
+            ? `action1TimeQuery(${arg})`
+            : arg;
+          return `[${tsLiteral(p.name)}]: ${value}`;
+        })
         .join(", ") +
       " }"
     : "undefined";
 
-  const outputSchemaName = emitOutputSchema(op.outputShape);
+  const outputSchemaName = op.outputSchema;
 
   const body =
     `  server.registerTool(\n` +
@@ -878,32 +992,46 @@ function emitTool(op: OpDescriptor): string {
     `      title: ${titleEscaped},\n` +
     `      description: ${descEscaped},\n` +
     (inputProps.length
-      ? `      inputSchema: {\n        ${inputProps.join(",\n        ")},\n      },\n`
-      : `      inputSchema: {},\n`) +
+      ? `      inputSchema: z.object({\n        ${inputProps.join(",\n        ")},\n      }),\n`
+      : `      inputSchema: z.object({}),\n`) +
     `      outputSchema: ${outputSchemaName},\n` +
     `      annotations: { ${annotations.join(", ")} },\n` +
     `    },\n` +
-    (inputProps.length === 0
-      ? `    async (_rawArgs, extra) => {\n      const args = _rawArgs as Record<string, unknown>;\n      void args;\n`
-      : `    async (rawArgs, extra) => {\n      const args = rawArgs as Record<string, unknown>;\n`) +
+    (op.unsupported
+      ? `    () => Promise.resolve(errorResult(${tsLiteral(op.unsupported)})),\n  );`
+      : handlerSource(op, pathExpr, queryExpr, inputProps.length > 0));
+
+  return body;
+}
+
+function handlerSource(
+  op: OpDescriptor,
+  pathExpr: string,
+  queryExpr: string,
+  hasInputs: boolean,
+): string {
+  return (
+    (!hasInputs
+      ? `    async (_rawArgs, ctx) => {\n      const args = _rawArgs as Record<string, unknown>;\n      void args;\n`
+      : `    async (rawArgs, ctx) => {\n      const args = rawArgs as Record<string, unknown>;\n`) +
     `      return runGenerated({\n` +
     `        client,\n` +
     `        toolName: ${tsLiteral(op.name)},\n` +
     `        method: ${tsLiteral(op.method)},\n` +
     `        path: ${pathExpr},\n` +
     `        queryParams: ${queryExpr},\n` +
-    `        body: ${op.hasBody ? "(args.body as Record<string, unknown> | undefined)" : "undefined"},\n` +
+    `        body: ${op.hasBody ? "args.body" : "undefined"},\n` +
     `        autoPaginate: ${op.hasPagination ? "Boolean(args.auto_paginate)" : "false"},\n` +
     `        cursor: ${op.hasPagination ? "args.cursor as (string | undefined)" : "undefined"},\n` +
+    `        paginated: ${op.hasPagination ? "true" : "false"},\n` +
     `        destructive: ${op.isDestructive ? '{ confirm: args.confirm as ("YES" | undefined), dry_run: args.dry_run as (boolean | undefined) }' : "undefined"},\n` +
     `        responseFormat: ${op.isReadOnly ? 'args.response_format as ("markdown" | "json" | undefined)' : "undefined"},\n` +
     `        verbose: ${op.isReadOnly ? "(args.verbose as boolean | undefined)" : "undefined"},\n` +
-    `        signal: extra?.signal,\n` +
+    `        signal: ctx.mcpReq.signal,\n` +
     `      });\n` +
     `    },\n` +
-    `  );`;
-
-  return body;
+    `  );`
+  );
 }
 
 function buildPathExpression(path: string, orgIdSourceName: string | undefined): string {
@@ -934,7 +1062,8 @@ function buildPathExpression(path: string, orgIdSourceName: string | undefined):
   return parts.length ? parts.join(" + ") : tsLiteral(path);
 }
 
-function emitFile(ops: OpDescriptor[], sha: string, skippedCount: number): string {
+function emitFile(ops: OpDescriptor[], sha: string, skipped: SkippedOp[]): string {
+  const skippedCount = skipped.length;
   const totalReadOnly = ops.filter((o) => o.isReadOnly).length;
   const totalDestructive = ops.filter((o) => o.isDestructive).length;
   const header =
@@ -952,11 +1081,15 @@ function emitFile(ops: OpDescriptor[], sha: string, skippedCount: number): strin
     skippedCount +
     ")\n\n" +
     'import { z } from "zod";\n' +
-    'import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n' +
+    'import type { McpServer } from "@modelcontextprotocol/server";\n' +
     'import type { Action1Client } from "../../client/action1Client.js";\n' +
     'import { runGenerated } from "./runtime.js";\n' +
     'import { resolveOrgId } from "../../config.js";\n' +
-    'import {\n  cursorListOutputShape,\n  listOutputShape,\n  okStatusOutputShape,\n  singleObjectOutputShape,\n} from "../helpers.js";\n\n';
+    (ops.some((o) => [...o.paramZod.values()].some((z) => z.action1Time))
+      ? 'import { action1TimeQuery, action1TimeSchema } from "../../spec/time.js";\n'
+      : "") +
+    helpersImport(ops) +
+    manifestSource(ops, skipped);
 
   const tagBuckets = new Map<string, OpDescriptor[]>();
   for (const op of ops) {
@@ -977,21 +1110,97 @@ function emitFile(ops: OpDescriptor[], sha: string, skippedCount: number): strin
       const sig =
         "function register_" +
         safeName(op.operationId) +
-        "(server: McpServer, client: Action1Client): void {";
-      return sig + "\n" + emitTool(op).split("\n").map((l) => "  " + l).join("\n") + "\n}";
+        "(server: McpServer, " +
+        (op.unsupported ? "_client" : "client") +
+        ": Action1Client): void {";
+      return (
+        sig +
+        "\n" +
+        emitTool(op)
+          .split("\n")
+          .map((l) => "  " + l)
+          .join("\n") +
+        "\n}"
+      );
     })
     .join("\n\n");
 
   return header + fns + footer;
 }
 
-function main(): void {
+/** Import of the helpers the emitted tools use (only those, so lint stays clean). */
+function helpersImport(ops: OpDescriptor[]): string {
+  const candidates = [
+    "cursorListOutputShape",
+    "listOutputShape",
+    "okStatusOutputShape",
+    "singleObjectOutputShape",
+  ];
+  const used = candidates.filter((name) =>
+    ops.some((o) => new RegExp("\\b" + name + "\\b").test(o.outputSchema)),
+  );
+  if (ops.some((o) => o.unsupported)) used.push("errorResult");
+  used.sort();
+  return "import {\n" + used.map((n) => "  " + n + ",\n").join("") + '} from "../helpers.js";\n\n';
+}
+
+function manifestSource(ops: OpDescriptor[], skipped: SkippedOp[]): string {
+  const row = (fields: Record<string, unknown>): string =>
+    "  { " +
+    Object.entries(fields)
+      .map(([k, v]) => k + ": " + JSON.stringify(v))
+      .join(", ") +
+    " },";
+  return (
+    "/** One entry per emitted tool, in registration order. */\n" +
+    "export interface GeneratedToolMeta {\n" +
+    "  name: string;\n  operationId: string;\n  method: string;\n  path: string;\n" +
+    "  destructive: boolean;\n  unsupported: boolean;\n}\n\n" +
+    "export const GENERATED_TOOL_MANIFEST: readonly GeneratedToolMeta[] = [\n" +
+    ops
+      .map((o) =>
+        row({
+          name: o.name,
+          operationId: o.operationId,
+          method: o.method,
+          path: o.path,
+          destructive: o.isDestructive,
+          unsupported: o.unsupported !== null,
+        }),
+      )
+      .join("\n") +
+    "\n];\n\n" +
+    "/** Spec operations not emitted because a curated tool of the same name covers them. */\n" +
+    "export const GENERATED_SKIPPED_OPERATIONS: readonly {\n" +
+    "  operationId: string;\n  method: string;\n  path: string;\n  toolName: string;\n}[] = [\n" +
+    skipped.map((sk) => row({ ...sk })).join("\n") +
+    "\n];\n\n"
+  );
+}
+
+async function main(): Promise<void> {
   const sha = checkSha();
   const spec = JSON.parse(readFileSync(SPEC_PATH, "utf8")) as OpenApiSpec;
   const { ops, skipped } = describe(spec);
   if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
-  const out = emitFile(ops, sha, skipped);
+  // Format with the repo's Prettier config so the committed file passes
+  // `npm run format:check` and the CI codegen roundtrip at the same time.
+  const prettier = await import("prettier");
+  const options = await prettier.resolveConfig(OUT_FILE);
+  const out = await prettier.format(emitFile(ops, sha, skipped), {
+    ...options,
+    filepath: OUT_FILE,
+  });
+  // Field names and enum values the curated tools read (src/spec/).
+  // Resolved before anything is written, so a contract path that no
+  // longer exists in the spec aborts the run.
+  const specModule = await prettier.format(specModuleSource(resolveContract(spec), sha), {
+    ...(await prettier.resolveConfig(SPEC_MODULE_FILE)),
+    filepath: SPEC_MODULE_FILE,
+  });
   writeFileSync(OUT_FILE, out, "utf8");
+  mkdirSync(dirname(SPEC_MODULE_FILE), { recursive: true });
+  writeFileSync(SPEC_MODULE_FILE, specModule, "utf8");
   process.stdout.write(
     "Generated " +
       ops.length +
@@ -1000,7 +1209,7 @@ function main(): void {
       " (spec sha: " +
       sha.slice(0, 12) +
       "); skipped " +
-      skipped +
+      skipped.length +
       " due to curated-name conflicts.\n",
   );
 }
@@ -1008,9 +1217,7 @@ function main(): void {
 // Only run codegen when invoked as a script (e.g. `tsx src/codegen/generate.ts`
 // via `npm run codegen`). Skipping the side-effect on bare import lets unit
 // tests dynamically `import("...generate.js")` the helpers (fitLead, fitTitle)
-// without overwriting `src/tools/generated/index.ts` mid-run. Pass-10 review
-// #3 originally split the connector list out for this reason; the helpers
-// follow the same gating pattern.
+// without overwriting `src/tools/generated/index.ts` mid-run.
 const invokedAsScript =
   typeof process !== "undefined" &&
   Array.isArray(process.argv) &&
@@ -1018,5 +1225,8 @@ const invokedAsScript =
   fileURLToPath(import.meta.url) === process.argv[1];
 
 if (invokedAsScript) {
-  main();
+  main().catch((err: unknown) => {
+    process.stderr.write(String(err instanceof Error ? (err.stack ?? err.message) : err) + "\n");
+    process.exit(1);
+  });
 }

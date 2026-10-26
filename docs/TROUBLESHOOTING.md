@@ -4,7 +4,7 @@ Common failure modes and how to fix them.
 
 ## Setup / install
 
-### `npm run build` fails with `Cannot find module @modelcontextprotocol/sdk`
+### `npm run build` fails with `Cannot find module @modelcontextprotocol/server`
 
 You skipped `npm install`. Run it from the repo root:
 
@@ -15,15 +15,14 @@ npm run build
 
 ### `tests/unit/specSha.test.ts` fails
 
-Either:
+`src/codegen/spec/openapi.json`, `openapi.sha256` and the generated tools
+no longer match: someone edited the spec or the SHA without regenerating.
+Do not edit the spec by hand; follow the refresh workflow in
+[`src/codegen/spec/SOURCE.md`](../src/codegen/spec/SOURCE.md) and
+[`CONTRIBUTING.md`](CONTRIBUTING.md#re-running-codegen).
 
-1. Someone edited `src/codegen/spec/openapi.json` directly without updating
-   `openapi.sha256`. Don't do that — see
-   [`CONTRIBUTING.md`](CONTRIBUTING.md) for the codegen regeneration
-   workflow.
-2. The Action1 OpenAPI spec changed upstream. Pull the latest, re-extract
-   per the SOURCE.md notes, regenerate `openapi.sha256`, run `npm run codegen`,
-   commit the lot.
+This test never contacts Action1. Whether Action1 serves a different spec
+is reported by `npm run spec:check`.
 
 ### TypeScript build errors after a fresh clone
 
@@ -33,16 +32,19 @@ npm install
 npm run build
 ```
 
-If the error mentions `@modelcontextprotocol/sdk` types, the SDK update
+If the error mentions `@modelcontextprotocol/server` types, the SDK update
 broke something. Open an issue with the full TypeScript error and the
-output of `npm ls @modelcontextprotocol/sdk`.
+output of `npm ls @modelcontextprotocol/server`.
 
 ## Runtime
 
-### `Invalid or missing environment configuration`
+### `Invalid or missing environment configuration` / `... is not set.`
 
-Something is missing or empty in `.env`. The error message lists every
-field. Required minimum:
+Something is missing or invalid in the environment. At start-up the
+server prints one line per problem (`action1-mcp: ACTION1_CLIENT_SECRET is
+not set.`, `action1-mcp: PORT is invalid: ...`) followed by a JSON
+`fatal` log line, and exits with code 1. Empty values count as unset.
+Required minimum:
 
 ```
 ACTION1_BASE_URL=https://app.eu.action1.com/api/3.0
@@ -51,7 +53,12 @@ ACTION1_CLIENT_SECRET=...
 ```
 
 `ACTION1_ORG_ID` is optional only if every tool call passes `org_id`
-explicitly. In practice you want it set.
+explicitly. In practice you want it set. With `ACTION1_ALLOWED_ORG_IDS`
+set, `ACTION1_ORG_ID` must be on that list.
+
+Typos in the boolean switches (`ACTION1_ALLOW_DESTRUCTIVE=ture`) and
+out-of-range numbers (`PORT`, the timeout and minute settings) also abort
+startup, on purpose.
 
 ### Every tool returns `HTTP 401`
 
@@ -64,29 +71,24 @@ The OAuth token exchange is failing. Check:
    on `app.action1.com` (US) silently 401.
 
 The structured logger emits `refresh_token_failed_falling_back_to_client_credentials`
-and `http_request_handler_failed` events on stderr — read those for the
+and `http_request_handler_failed` events on stderr - read those for the
 exact response body Action1 returned.
 
 ### Some tools return `HTTP 403` with a `Forbidden` hint
 
 The API credential's role lacks the permission for that operation.
-Action1 documents permissions at <https://www.action1.com/documentation/permissions/>.
-Common pairs:
-
-| Tool | Permission needed |
-|---|---|
-| `action1_list_vulnerabilities`, anything under `/vulnerabilities/` | `view_vulnerabilities` |
-| `action1_audit_log_search`, anything under `/audit/` | `view_audit` |
-| `action1_get_subscription`, `action1_get_subscription_usage`, `action1_get_org_subscription_usage`, `action1_request_enterprise_quote`, `action1_request_enterprise_trial` | `manage_enterprise` |
-| `action1_list_users`, `action1_create_user`, `action1_update_user`, `action1_delete_user`, `action1_list_roles`, `action1_create_role`, `action1_update_role`, `action1_delete_role`, `action1_clone_role` | `manage_users` / `manage_roles` |
-| Any destructive `action1_*` | `run_automations` (+ `manage_*` for the area) |
+[`permissions.md`](permissions.md) lists the permission of every
+operation and tool, generated from the Action1 spec. For example, the
+vulnerability tools need `view_vulnerabilities` and the audit tools
+`view_audit`.
 
 The fix is to update the credential's role in the Action1 console, not the
-MCP server.
+MCP server. The `action1://me` resource and the `/check-my-permissions`
+prompt show what the current role allows.
 
 ### `action1_get_endpoint` returns `HTTP 403`
 
-This was a code bug — fixed in v0.2 by switching to the canonical path
+This was a code bug - fixed in v0.2 by switching to the canonical path
 (`/endpoints/managed/{org}/{ep}`). If you're still seeing it on the latest
 build, your role lacks `view_endpoints`. Verify with
 `action1_get_me` (returns the credential's role + permissions).
@@ -96,7 +98,7 @@ build, your role lacks `view_endpoints`. Verify with
 You're on a stale build. The full ten-field `run_script` payload has
 been encoded in `src/payloads/macOsBash.ts` since v0.1. Run
 `git pull && npm install && npm run build`. If it still happens on the
-latest commit, open an issue with the full request body — it's a real
+latest commit, open an issue with the full request body - it's a real
 regression and we need a HAR trace from the Action1 web console to
 diff against.
 
@@ -105,13 +107,42 @@ diff against.
 Either:
 
 1. You explicitly passed `success_exit_codes: ""` (empty). Don't.
-2. Bug in the payload builder. Should not happen — open an issue.
+2. Bug in the payload builder. Should not happen - open an issue.
+
+### A destructive call is refused
+
+The error names what is missing:
+
+| Message contains | Fix |
+|---|---|
+| `ACTION1_ALLOW_DESTRUCTIVE` | The operator must set `ACTION1_ALLOW_DESTRUCTIVE=true` and restart. |
+| `Refusing account operation` | Users, roles, `/me`, enterprise, organizations, subscription and `action1_raw_request` writes also need `ACTION1_ALLOW_ACCOUNT_OPS=true`. |
+| `Refusing organization` | The organization is not in `ACTION1_ALLOWED_ORG_IDS`; use an allowed one or ask the operator to add it. |
+| `ACTION1_ALLOW_ENTERPRISE_OPS` | With `ACTION1_ALLOWED_ORG_IDS` set, a change that is not bound to one allowed organization needs `ACTION1_ALLOW_ENTERPRISE_OPS=true`. |
+| `confirm` | Pass `confirm: "YES"` exactly. |
+
+Without `dry_run: false` a destructive tool only returns a preview; that
+is not an error.
+
+### `Refusing organization "...": it is not listed in ACTION1_ALLOWED_ORG_IDS`
+
+The server only addresses the organizations in `ACTION1_ALLOWED_ORG_IDS`.
+Use one of them, or add the organization to the list and restart.
+`action1_raw_request` additionally only reaches documented API paths
+while the list is set (`Refusing path ...`).
+
+### `Unrecognized key` validation error
+
+Tool inputs are strict: an unknown or misspelled argument (for example
+`confrim`) is rejected instead of being ignored. Use the argument names
+from the tool's input schema.
 
 ### Tools intermittently fail with `ENOTFOUND` or `EAI_AGAIN`
 
-DNS hiccup. The retry layer (5 attempts, exponential backoff up to 4 s)
-should recover. If it fails after retries, your DNS is genuinely broken or
-the Action1 API is unreachable from the server — try `dig app.eu.action1.com`
+DNS hiccup. The request never left the server, so the retry layer retries
+it automatically with exponential backoff, for reads and mutations alike.
+If it fails after retries, your DNS is genuinely broken or
+the Action1 API is unreachable from the server - try `dig app.eu.action1.com`
 and `curl -I https://app.eu.action1.com/api/3.0/`.
 
 ### Long-running automation tools (`wait_for_automation`, `execute_and_wait`) appear to hang
@@ -129,55 +160,86 @@ The server polls every 5 seconds (configurable via
    The MCP polls only as long as `timeout_seconds` allows; lower it to
    abort earlier.
 
+Both tools send an MCP progress notification after every poll when the
+client requests progress (a `progressToken` in the request `_meta`).
+Clients that reset their request timeout on progress can then wait
+longer than their default request timeout. If `execute_and_wait` fails
+after the action started, the error names the `instance_id`: continue
+with `action1_wait_for_automation` for that instance instead of running
+the action again.
+
+### A tool fails with "timed out after ... ms (ACTION1_REQUEST_TIMEOUT_MS)"
+
+Action1 did not answer within `ACTION1_REQUEST_TIMEOUT_MS` (this bound
+covers the whole call including retries). Raise the value if Action1 is
+slow for that call. A timed-out mutation may still have been processed
+by Action1: check the resulting state before re-issuing it.
+
 ### Output contains `Starting`, `Waiting`, `Completed` lines
 
 You're using the auto-generated tool
 (`action1_get_automation_script_output`) which returns the raw response.
-Use the curated `action1_get_automation_output` instead — it strips
+Use the curated `action1_get_automation_output` instead - it strips
 those lifecycle markers automatically.
 
 ### `auto_paginate=true` returns more / fewer items than expected
 
-Check the caller-supplied `limit`. With `auto_paginate=true`, `limit` is
-treated as `maxItems` (cap on the total returned). Without it, the runtime
-pages until the API returns an empty page.
-
-If you set neither, you'll get the entire collection — which can be
-thousands of items for `action1_list_audit_events` or
-`action1_list_logs`.
+Check the caller-supplied `limit`: it caps the items of one call, with or
+without `auto_paginate`. With `auto_paginate=true` the runtime walks pages
+until `limit` or the response size budget, then returns `has_more: true`
+and a `next_cursor`; call again with that cursor for the rest. `from` sets
+the first record only when no `cursor` is given.
 
 ## HTTP transport
 
-### `Bearer token required` (HTTP 401)
+### `Bearer token required` / `Invalid bearer token` (HTTP 401)
 
-`MCP_HTTP_TOKEN` is set in the server env but the client did not send the
-header. Add to your client's connector config:
+The client did not send the token, or sent a different one. Add to the
+client's connector configuration:
 
 ```
-Authorization: Bearer <token-value>
+Authorization: Bearer <MCP_HTTP_TOKEN value>
 ```
+
+### `Host header not allowed` (HTTP 403)
+
+The request's `Host` header is not a loopback name, not the bind address
+and not in `MCP_HTTP_ALLOWED_HOSTS`. Behind a reverse proxy that forwards
+the original host (Caddy does), add the public name:
+`MCP_HTTP_ALLOWED_HOSTS=mcp.example.com`. This check is the DNS-rebinding
+defence; do not work around it.
 
 ### `Origin not allowed` (HTTP 403)
 
-The browser sent an `Origin` header that's not in `MCP_HTTP_ALLOWED_ORIGINS`.
-Either add the origin (e.g. `https://claude.ai`) or — if no browser
-clients connect — leave the allowlist empty.
+A browser sent an `Origin` header that is not accepted. Without
+`MCP_HTTP_ALLOWED_ORIGINS` only loopback origins are accepted; add the
+exact origin of your browser client to the list.
 
-### Server refuses to start: `Refusing to start: HTTP transport binds to non-loopback host '...' without a Bearer token`
+### Server refuses to start: `Refusing to start: HTTP transport requires MCP_HTTP_TOKEN`
 
-You started the HTTP transport on a non-loopback host without setting
-`MCP_HTTP_TOKEN`. The server hard-fails at startup rather than running
-an unauthenticated public endpoint. Fix either:
+`--http` always needs a token, also on `127.0.0.1`. Set `MCP_HTTP_TOKEN`
+to at least 16 characters (recommended: `openssl rand -hex 32`). For local
+development only, `MCP_HTTP_ALLOW_NO_AUTH=true` runs without a token on a
+loopback bind.
 
-- Set `MCP_HTTP_TOKEN` to a value with at least 16 non-whitespace
-  characters (recommended: `openssl rand -hex 32`), or
-- Bind to loopback with `--host 127.0.0.1` and front the server with a
-  reverse proxy that handles auth.
+### Server refuses to start: `... binds to the wildcard address ... but MCP_HTTP_ALLOWED_HOSTS is empty`
 
-### `/healthz` returns `200` but `/mcp` 404s
+With `--host 0.0.0.0` or `::` the server cannot know its own name. List
+the hostnames clients use in `MCP_HTTP_ALLOWED_HOSTS`. Better: bind to
+`127.0.0.1` behind a reverse proxy.
 
-You're hitting an HTTP path that's not registered. The only endpoints
-served are `GET /healthz` and `POST /mcp`. Check your URL.
+### `/mcp` answers 405 or 404
+
+Only `POST /mcp`, `GET /healthz` and `GET /readyz` are served. `GET` and `DELETE` on
+`/mcp` return 405 (the server is stateless and opens no event stream);
+other paths return 404. A `POST` with a content type other than JSON gets
+415.
+
+### Every HTTP user shares one rate limit
+
+Behind a reverse proxy all requests come from the proxy's address. Set
+`TRUST_PROXY=loopback` (proxy on the same machine) so the limit of 60
+requests per minute applies per client.
 
 ## Resources & prompts
 
@@ -205,24 +267,24 @@ Claude Code shows them via `/`-completion. Claude Desktop has a
 don't appear, restart the host (the prompt list is read at connect
 time only).
 
-### `logging/setLevel` does nothing
+### I cannot change the log level from my MCP host
 
-The server honours it but emits to **stderr**. Some hosts (Claude
-Desktop without dev-tools open) don't surface stderr. Either run with
-`--http` and watch the process output, or set
-`ACTION1_LOG_LEVEL=debug` in the env up-front.
+The server does not offer the MCP `logging` capability. Logs always go to
+**stderr** as JSON lines; set the level with `ACTION1_LOG_LEVEL` (for
+example `debug`) and restart. Where to find stderr per host:
+[`INSTALLATION.md`](INSTALLATION.md#where-does-the-server-log).
 
 ## MCP host integration
 
 ### Claude Code says "no tools loaded" after `claude mcp add`
 
 Run `claude mcp list` and check the status column. If it shows `error`,
-the server is failing to start — try the same command in a regular
+the server is failing to start - try the same command in a regular
 terminal (`node --env-file=/abs/path/.env /abs/path/dist/index.js`) to
 see the error message. Common causes:
 
 - Wrong absolute path.
-- `--env-file` flag requires Node 20+.
+- Node older than 22.12, the supported minimum (check `node -v`).
 - `.env` permissions wrong (must be readable by the user running Claude
   Code).
 
@@ -241,31 +303,44 @@ restart Cursor.
 
 In the connector test:
 
-1. Check the URL is HTTPS (Claude.ai refuses plain HTTP).
-2. Check the `Authorization: Bearer <token>` header is set in the
-   connector's "Headers" section.
-3. Try `curl -X POST https://your-host/mcp -H "Authorization: Bearer X"`
-   from your laptop — if that returns `200`, the issue is on Claude.ai's
-   side, not yours.
+1. Check the URL is HTTPS and ends in `/mcp` (Claude.ai refuses plain
+   HTTP).
+2. Check the `Authorization: Bearer <token>` header in the connector
+   settings.
+3. From your laptop, `curl https://your-host/healthz` must return
+   `{"ok":true,...}`. Then send an initialize request:
+
+   ```bash
+   curl -s -X POST https://your-host/mcp \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+   ```
+
+   A JSON-RPC `result` means the server side works. A 403 points at
+   `MCP_HTTP_ALLOWED_HOSTS`, a 401 at the token.
 
 ## Codegen & spec
 
 ### `npm run codegen` produces a different `index.ts` than what's committed
 
-The OpenAPI spec changed without updating the SHA pin. Run the SHA-update
-workflow in `CONTRIBUTING.md`. If the spec hasn't changed, then the
-generator's behaviour did — `git diff` to see what.
+Either the spec changed without regenerating (run the refresh workflow in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#re-running-codegen)), or the
+generator's behaviour changed: `git diff` shows what.
 
 ### `Spec SHA mismatch` error from codegen
 
 The pinned SHA in `openapi.sha256` doesn't match the actual file. Don't
-auto-fix this — review `git log src/codegen/spec/openapi.json` to see
+auto-fix this: review `git log src/codegen/spec/openapi.json` to see
 when the file changed and why. Re-pin only after a deliberate review.
 
 ## Still stuck
 
 - Search the issue tracker:
   <https://github.com/mguttmann/action1-mcp/issues>
-- Open a new issue with: server version (`npm ls action1-mcp-server` or commit
-  SHA), Node version (`node --version`), MCP host + version, the exact
-  command you ran, the full stderr output, and a redacted reproduction.
+- Open a new issue with: server version (`node dist/index.js --version`,
+  or the commit SHA), Node version
+  (`node --version`), MCP host and version, the exact command you ran,
+  the stderr output and a reproduction. Remove credentials and customer
+  identifiers first.

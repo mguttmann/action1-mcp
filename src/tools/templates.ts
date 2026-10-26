@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { Action1Client } from "../client/action1Client.js";
 import {
@@ -17,14 +17,15 @@ export function registerTemplateTools(server: McpServer, client: Action1Client):
     "action1_list_action_templates",
     {
       title: "List action templates",
-      description: "List every action template (id, name, description). Use ids with action1_get_action_template.",
-      inputSchema: {
+      description:
+        "List every action template (id, name, description). Use ids with action1_get_action_template.",
+      inputSchema: z.object({
         ...formatShape,
         applicable_to: z
           .string()
           .optional()
           .describe("Filter to templates applicable to a context URL."),
-      },
+      }),
       outputSchema: listOutputShape,
       annotations: {
         readOnlyHint: true,
@@ -51,11 +52,12 @@ export function registerTemplateTools(server: McpServer, client: Action1Client):
     "action1_get_action_template",
     {
       title: "Get action template details",
-      description: "Fetch full details (parameters, supported platforms) for a single action template by id.",
-      inputSchema: {
+      description:
+        "Fetch full details (parameters, supported platforms) for a single action template by id.",
+      inputSchema: z.object({
         ...formatShape,
         template_id: z.string().min(1).describe("Action template id."),
-      },
+      }),
       outputSchema: singleObjectOutputShape,
       annotations: {
         readOnlyHint: true,
@@ -69,11 +71,7 @@ export function registerTemplateTools(server: McpServer, client: Action1Client):
         const data = await client.request<unknown>(
           `/automations/action-templates/${encodeURIComponent(template_id)}`,
         );
-        return jsonResult(
-          data,
-          { template: toRecord(data) },
-          response_format,
-        );
+        return jsonResult(data, { template: toRecord(data) }, response_format);
       }),
   );
 }

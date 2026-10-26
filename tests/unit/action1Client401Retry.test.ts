@@ -3,7 +3,7 @@ import { Action1Client } from "../../src/client/action1Client.js";
 import { Action1ApiError } from "../../src/client/errors.js";
 import type { AppConfig } from "../../src/config.js";
 
-// Finding 5.4 — when a request races with a stale upstream token,
+// When a request races with a stale upstream token,
 // the client must invalidate the cache and re-issue the request
 // exactly once before giving up.
 
@@ -14,7 +14,22 @@ const cfg: AppConfig = {
   clientSecret: "secret",
   defaultTimeoutMinutes: "10",
   defaultRetryMinutes: "1440",
-  http: { port: 3000, host: "127.0.0.1", allowedOrigins: [], token: undefined },
+  lastSeenStaleMinutes: 10,
+  allowDestructive: false,
+  destructiveAutoConfirm: false,
+  allowAccountOps: false,
+  allowedOrgIds: [],
+  toolsets: [],
+  redactPii: false,
+  http: {
+    port: 3000,
+    host: "127.0.0.1",
+    allowedOrigins: [],
+    allowedHosts: [],
+    token: undefined,
+    allowNoAuth: false,
+    trustProxy: false,
+  },
 };
 
 interface ScriptedResponse {
@@ -29,20 +44,16 @@ function makeMockFetch(responses: ScriptedResponse[]) {
   const spy = vi.fn(async (url: string, init: RequestInit = {}) => {
     if (url.endsWith("/oauth2/token")) {
       const next = tokens.shift() ?? "tok-X";
-      return new Response(
-        JSON.stringify({ access_token: next, expires_in: 3600 }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ access_token: next, expires_in: 3600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     calls.push({ url, init });
     const r = queue.shift() ?? { status: 500, body: "exhausted" };
     const status = r.status ?? 200;
     const body =
-      r.body === undefined
-        ? null
-        : typeof r.body === "string"
-          ? r.body
-          : JSON.stringify(r.body);
+      r.body === undefined ? null : typeof r.body === "string" ? r.body : JSON.stringify(r.body);
     return new Response(body, {
       status,
       headers: { "Content-Type": "application/json" },
@@ -52,7 +63,7 @@ function makeMockFetch(responses: ScriptedResponse[]) {
   return { spy, calls };
 }
 
-describe("Action1Client — auto-retry on 401 (finding 5.4)", () => {
+describe("Action1Client - auto-retry on 401", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -90,10 +101,8 @@ describe("Action1Client — auto-retry on 401 (finding 5.4)", () => {
     ]);
     const client = new Action1Client(cfg);
 
-    await expect(client.request("/x", { retry: false })).rejects.toBeInstanceOf(
-      Action1ApiError,
-    );
-    // Exactly 2 calls — no third attempt, no infinite loop.
+    await expect(client.request("/x", { retry: false })).rejects.toBeInstanceOf(Action1ApiError);
+    // Exactly 2 calls - no third attempt, no infinite loop.
     expect(calls).toHaveLength(2);
   });
 });

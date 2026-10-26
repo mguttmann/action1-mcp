@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a workflow or tool the server should support.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What do you want to do through the agent? Describe the task, not only the Action1 endpoint.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behaviour or workaround
+      description: What happens today, and how you work around it (if at all).
+  - type: textarea
+    id: api
+    attributes:
+      label: Action1 API operations involved
+      description: Optional. Endpoints or operationIds from the Action1 API documentation.
+  - type: dropdown
+    id: destructive
+    attributes:
+      label: Does it change state in Action1?
+      options:
+        - "No, read-only"
+        - "Yes, it changes endpoints, automations or settings"
+        - "Yes, it changes users, roles, organizations or the account"
+    validations:
+      required: true

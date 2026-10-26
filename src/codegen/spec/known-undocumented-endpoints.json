@@ -1,0 +1,19 @@
+{
+  "description": "Action1 endpoints that curated tools call although the pinned OpenAPI spec does not document them. tests/unit/curatedPaths.test.ts fails when a curated tool uses an undocumented path that is not listed here, or when a listed path becomes documented or unused. scripts/fetch-spec.mjs --check reports each entry against the live spec. Background: docs/GOTCHAS.md.",
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/policies/instances/{orgId}",
+      "usedBy": ["src/tools/execution.ts", "src/tools/workflows.ts"],
+      "status": "verified live (TESTING.md rows 12 and 14)",
+      "note": "Legacy alias of POST /automations/instances/{orgId} (PSAction1 convention). Windows run-now paths use it; macOS uses the documented path."
+    },
+    {
+      "method": "GET",
+      "path": "/endpoints/managed/{orgId}/{endpointId}/vulnerabilities",
+      "usedBy": ["src/tools/endpoints.ts", "src/tools/wrappers/index.ts"],
+      "status": "unverified (TESTING.md row 8 only saw a 403)",
+      "note": "The documented equivalent is GET /vulnerabilities/{orgId}?endpoint_id=... action1_cve_remediation_plan uses that and falls back to this path only on a 404."
+    }
+  ]
+}

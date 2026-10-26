@@ -1,0 +1,2594 @@
+{
+  "tools": [
+    {
+      "name": "action1_add_endpoint_to_group",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "group_id",
+        "org_id",
+        "response_format"
+      ],
+      "required": ["endpoint_id", "group_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_audit_log_search",
+      "inputProperties": [
+        "cursor",
+        "event_type_substring",
+        "from_time",
+        "limit",
+        "response_format",
+        "target_substring",
+        "to_time",
+        "user_substring"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_automations_summary",
+      "inputProperties": ["max_scan", "org_id", "response_format"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_clone_package",
+      "inputProperties": ["confirm", "dry_run", "org_id", "package_id"],
+      "required": ["package_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_clone_role",
+      "inputProperties": ["confirm", "dry_run", "role_id"],
+      "required": ["role_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_automation_instance",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_automation_schedule",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_cve_remediation",
+      "inputProperties": ["body", "confirm", "cve_id", "dry_run", "org_id"],
+      "required": ["body", "cve_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_data_source",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_endpoint_group",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_endpoint_remote_session",
+      "inputProperties": ["body", "confirm", "dry_run", "endpoint_id", "org_id"],
+      "required": ["body", "endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_organization",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_package",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_package_version",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id", "package_id"],
+      "required": ["body", "package_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_report",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_report_subscription",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_role",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_role_user",
+      "inputProperties": ["confirm", "dry_run", "role_id", "user_id"],
+      "required": ["role_id", "user_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_script",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_setting",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_create_user",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_cve_remediation_plan",
+      "inputProperties": ["cve_id", "endpoint_id", "max_items", "org_id", "response_format"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_automation",
+      "inputProperties": ["automation_id", "confirm", "dry_run", "org_id"],
+      "required": ["automation_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_automation_action",
+      "inputProperties": ["action_id", "automation_id", "confirm", "dry_run", "org_id"],
+      "required": ["action_id", "automation_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_data_source",
+      "inputProperties": ["confirm", "data_source_id", "dry_run"],
+      "required": ["data_source_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_deployer",
+      "inputProperties": ["confirm", "deployer_id", "dry_run", "org_id"],
+      "required": ["deployer_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_endpoint",
+      "inputProperties": ["confirm", "dry_run", "endpoint_id", "org_id"],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_group",
+      "inputProperties": ["confirm", "dry_run", "group_id", "org_id"],
+      "required": ["group_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_organization",
+      "inputProperties": ["confirm", "dry_run", "org_id"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_package",
+      "inputProperties": ["confirm", "dry_run", "org_id", "package_id"],
+      "required": ["package_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_package_version_action",
+      "inputProperties": ["action_id", "confirm", "dry_run", "org_id", "package_id", "version_id"],
+      "required": ["action_id", "package_id", "version_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_remediation",
+      "inputProperties": ["confirm", "cve_id", "dry_run", "org_id", "remediation_id"],
+      "required": ["cve_id", "remediation_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_report",
+      "inputProperties": ["confirm", "dry_run", "report_id"],
+      "required": ["report_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_report_subscription",
+      "inputProperties": ["confirm", "dry_run", "subscription_id"],
+      "required": ["subscription_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_role",
+      "inputProperties": ["confirm", "dry_run", "role_id"],
+      "required": ["role_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_role_user",
+      "inputProperties": ["confirm", "dry_run", "role_id", "user_id"],
+      "required": ["role_id", "user_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_script",
+      "inputProperties": ["confirm", "dry_run", "script_id"],
+      "required": ["script_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_setting",
+      "inputProperties": ["confirm", "dry_run", "setting_id"],
+      "required": ["setting_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_user",
+      "inputProperties": ["confirm", "dry_run", "user_id"],
+      "required": ["user_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_delete_version",
+      "inputProperties": ["confirm", "dry_run", "org_id", "package_id", "version_id"],
+      "required": ["package_id", "version_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_deploy_package",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "params",
+        "response_format",
+        "target_type"
+      ],
+      "required": ["endpoint_id", "params"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_deploy_update",
+      "inputProperties": [
+        "confirm",
+        "display_summary",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "reboot_after",
+        "response_format",
+        "target_type",
+        "updates"
+      ],
+      "required": ["endpoint_id", "updates"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_endpoint_groups_resolve",
+      "inputProperties": ["org_id", "query", "response_format"],
+      "required": ["query"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_endpoints_summary",
+      "inputProperties": ["org_id", "response_format"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_execute_and_wait",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "mode",
+        "name",
+        "org_id",
+        "params",
+        "poll_interval_seconds",
+        "response_format",
+        "script_text",
+        "skip_connectivity_check",
+        "success_exit_codes",
+        "template_id",
+        "timeout_seconds"
+      ],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_export_audit_log",
+      "inputProperties": [
+        "event",
+        "filter",
+        "format",
+        "from",
+        "from_id",
+        "limit",
+        "response_format",
+        "sortby",
+        "timefrom",
+        "timeto",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_action_template",
+      "inputProperties": ["response_format", "template_id"],
+      "required": ["template_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_agent_install_url",
+      "inputProperties": ["install_type", "org_id", "response_format", "verbose"],
+      "required": ["install_type"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_audit_event",
+      "inputProperties": ["id", "response_format", "verbose"],
+      "required": ["id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_automation_instance",
+      "inputProperties": ["automation_id", "org_id", "response_format", "verbose"],
+      "required": ["automation_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_automation_output",
+      "inputProperties": ["endpoint_id", "include_raw", "instance_id", "org_id", "response_format"],
+      "required": ["endpoint_id", "instance_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_automation_results",
+      "inputProperties": ["instance_id", "org_id", "response_format"],
+      "required": ["instance_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_automation_schedule",
+      "inputProperties": ["automation_id", "org_id", "response_format", "verbose"],
+      "required": ["automation_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_automation_script_output",
+      "inputProperties": ["endpoint_id", "instance_id", "org_id", "response_format", "verbose"],
+      "required": ["endpoint_id", "instance_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_automation_status",
+      "inputProperties": ["instance_id", "org_id", "response_format"],
+      "required": ["instance_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_cve",
+      "inputProperties": ["cve_id", "org_id", "response_format", "verbose"],
+      "required": ["cve_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_cve_description",
+      "inputProperties": ["cve_id", "response_format", "verbose"],
+      "required": ["cve_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_data_source",
+      "inputProperties": ["data_source_id", "response_format", "verbose"],
+      "required": ["data_source_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_deployer",
+      "inputProperties": ["deployer_id", "org_id", "response_format", "verbose"],
+      "required": ["deployer_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_drilldown_for_report_row",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "live_only",
+        "org_id",
+        "report_id",
+        "report_row_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["report_id", "report_row_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_endpoint",
+      "inputProperties": ["endpoint_id", "org_id", "response_format"],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_endpoint_discovery_settings",
+      "inputProperties": ["org_id", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_endpoints_onboarded_status",
+      "inputProperties": ["org_id", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_enterprise",
+      "inputProperties": ["response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_export_for_report",
+      "inputProperties": [
+        "filter",
+        "format",
+        "from",
+        "limit",
+        "live_only",
+        "org_id",
+        "report_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["report_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_export_for_report_row",
+      "inputProperties": [
+        "format",
+        "org_id",
+        "report_id",
+        "report_row_id",
+        "response_format",
+        "verbose"
+      ],
+      "required": ["report_id", "report_row_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_group",
+      "inputProperties": ["group_id", "org_id", "response_format", "verbose"],
+      "required": ["group_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_installed_software_endpoint",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "endpoint_id",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_match_conflicts_for_package",
+      "inputProperties": ["app_name_match", "org_id", "package_id", "response_format", "verbose"],
+      "required": ["package_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_match_conflicts_for_software_repository",
+      "inputProperties": ["app_name_match", "org_id", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_me",
+      "inputProperties": ["response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_org_subscription_usage",
+      "inputProperties": ["org_id", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_remote_session",
+      "inputProperties": ["endpoint_id", "org_id", "response_format", "session_id", "verbose"],
+      "required": ["endpoint_id", "session_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_report_or_category",
+      "inputProperties": ["report_or_category_id", "response_format", "verbose"],
+      "required": ["report_or_category_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_role",
+      "inputProperties": ["response_format", "role_id", "verbose"],
+      "required": ["role_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_script",
+      "inputProperties": ["response_format", "script_id", "verbose"],
+      "required": ["script_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_setting",
+      "inputProperties": ["response_format", "setting_id", "verbose"],
+      "required": ["setting_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_setting_template",
+      "inputProperties": ["response_format", "template_id", "verbose"],
+      "required": ["template_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_software_repository_package",
+      "inputProperties": ["fields", "org_id", "package_id", "response_format", "verbose"],
+      "required": ["package_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_subscription",
+      "inputProperties": ["response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_subscription_usage",
+      "inputProperties": ["response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_update_package",
+      "inputProperties": [
+        "approval_status",
+        "auto_paginate",
+        "builtin",
+        "cursor",
+        "custom",
+        "fields",
+        "filter",
+        "from",
+        "limit",
+        "only_latest",
+        "org_id",
+        "package_id",
+        "response_format",
+        "security_severity",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["package_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_user",
+      "inputProperties": ["response_format", "user_id", "verbose"],
+      "required": ["user_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_version",
+      "inputProperties": ["org_id", "package_id", "response_format", "verbose", "version_id"],
+      "required": ["package_id", "version_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_get_windows_deployer_url",
+      "inputProperties": ["org_id", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_init_software_upload",
+      "inputProperties": [
+        "body",
+        "confirm",
+        "dry_run",
+        "org_id",
+        "package_id",
+        "platform",
+        "version_id"
+      ],
+      "required": ["package_id", "platform", "version_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_action_templates",
+      "inputProperties": ["applicable_to", "response_format"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_audit_events",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "event",
+        "filter",
+        "from",
+        "from_id",
+        "limit",
+        "response_format",
+        "sortby",
+        "timefrom",
+        "timeto",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_automation_deployment_statuses",
+      "inputProperties": ["automation_id", "org_id", "response_format", "verbose"],
+      "required": ["automation_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_automation_instances",
+      "inputProperties": [
+        "auto_paginate",
+        "completed",
+        "cursor",
+        "endpoint_id",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "status",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_automation_schedules",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_cve_endpoints",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "cve_id",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "product_names",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["cve_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_cve_remediations",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "cve_id",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["cve_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_data_sources",
+      "inputProperties": ["builtin", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_endpoint_deployers",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "installed_since",
+        "limit",
+        "org_id",
+        "os",
+        "response_format",
+        "sortby",
+        "status",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_endpoint_groups",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_endpoint_missing_updates",
+      "inputProperties": [
+        "approval_status",
+        "auto_paginate",
+        "cursor",
+        "endpoint_id",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "security_severity",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_endpoints",
+      "inputProperties": [
+        "cursor",
+        "fields",
+        "filter",
+        "limit",
+        "online_status",
+        "org_id",
+        "os",
+        "page_size",
+        "projection",
+        "reboot_required",
+        "reset_cache",
+        "response_format",
+        "sortby",
+        "status",
+        "update_status",
+        "vulnerability_status"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_group_contents",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "fields",
+        "filter",
+        "from",
+        "group_id",
+        "limit",
+        "online_status",
+        "org_id",
+        "os",
+        "reboot_required",
+        "response_format",
+        "sortby",
+        "status",
+        "update_status",
+        "verbose",
+        "vulnerability_status"
+      ],
+      "required": ["group_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_installed_software_data",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "live_only",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_installed_software_errors",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_instance_endpoint_results",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "instance_id",
+        "last_status",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["instance_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_logs",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "from",
+        "level",
+        "limit",
+        "org_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_missing_updates",
+      "inputProperties": ["endpoint_id", "limit", "org_id", "response_format"],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_org_vulnerabilities",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "cveids",
+        "endpoint_id",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "published_date_end",
+        "published_date_start",
+        "remediation_required_end_day",
+        "remediation_required_start_day",
+        "remediation_status",
+        "reset_cache",
+        "response_format",
+        "score",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_organizations",
+      "inputProperties": ["admin", "limit", "response_format"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_permissions",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_recent_automations",
+      "inputProperties": ["cursor", "limit", "org_id", "response_format"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_report_data",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "details",
+        "endpoint_id",
+        "filter",
+        "from",
+        "limit",
+        "live_only",
+        "org_id",
+        "report_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["report_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_report_errors",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "report_id",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["report_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_report_subscriptions",
+      "inputProperties": ["auto_paginate", "cursor", "from", "limit", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_reports",
+      "inputProperties": ["response_format", "subtree", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_role_users",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "response_format",
+        "role_id",
+        "sortby",
+        "verbose"
+      ],
+      "required": ["role_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_roles",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "fields",
+        "filter",
+        "from",
+        "limit",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_scripts",
+      "inputProperties": ["builtin", "platform", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_setting_templates",
+      "inputProperties": ["filter", "response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_settings",
+      "inputProperties": [
+        "auto_paginate",
+        "category",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_software_repository",
+      "inputProperties": [
+        "auto_paginate",
+        "builtin",
+        "cursor",
+        "custom",
+        "fields",
+        "filter",
+        "from",
+        "limit",
+        "match_name",
+        "match_version",
+        "org_id",
+        "platform",
+        "response_format",
+        "sortby",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_subscription_usage_organizations",
+      "inputProperties": ["response_format", "verbose"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_updates",
+      "inputProperties": [
+        "approval_status",
+        "auto_paginate",
+        "builtin",
+        "cursor",
+        "custom",
+        "fields",
+        "filter",
+        "from",
+        "limit",
+        "only_latest",
+        "org_id",
+        "response_format",
+        "security_severity",
+        "sortby",
+        "update_sla_end_day",
+        "update_sla_start_day",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_user_roles",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "from",
+        "limit",
+        "response_format",
+        "user_id",
+        "verbose"
+      ],
+      "required": ["user_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_users",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "response_format",
+        "user_type",
+        "verbose"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_version_endpoints",
+      "inputProperties": [
+        "auto_paginate",
+        "cursor",
+        "filter",
+        "from",
+        "limit",
+        "org_id",
+        "package_id",
+        "response_format",
+        "sortby",
+        "verbose",
+        "version_id"
+      ],
+      "required": ["package_id", "version_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_list_vulnerabilities",
+      "inputProperties": ["endpoint_id", "org_id", "response_format"],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_move_endpoint",
+      "inputProperties": ["body", "confirm", "dry_run", "endpoint_id", "org_id"],
+      "required": ["body", "endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_raw_request",
+      "inputProperties": [
+        "body",
+        "confirm",
+        "dry_run",
+        "method",
+        "path",
+        "query",
+        "response_format"
+      ],
+      "required": ["method", "path"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_reboot_endpoint",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "response_format",
+        "skip_connectivity_check",
+        "target_type"
+      ],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_recurring_schedules",
+      "inputProperties": [
+        "active_only",
+        "cursor",
+        "group_id_substring",
+        "limit",
+        "org_id",
+        "response_format",
+        "template_id"
+      ],
+      "required": [],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_remove_endpoint_from_group",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "group_id",
+        "org_id",
+        "response_format"
+      ],
+      "required": ["endpoint_id", "group_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_report_export",
+      "inputProperties": ["format", "limit", "org_id", "report", "response_format"],
+      "required": ["report"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_requery_installed_software_for_endpoint",
+      "inputProperties": ["confirm", "dry_run", "endpoint_id", "org_id"],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_requery_installed_software_for_org",
+      "inputProperties": ["confirm", "dry_run", "org_id"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_requery_report",
+      "inputProperties": ["confirm", "dry_run", "endpoint_id", "org_id", "report_id"],
+      "required": ["report_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_request_enterprise_closure",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_request_enterprise_quote",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_request_enterprise_trial",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_revoke_enterprise_closure",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": ["body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_run_bash_macos",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "response_format",
+        "retry_minutes",
+        "script_text",
+        "target_type",
+        "timeout_minutes"
+      ],
+      "required": ["endpoint_id", "script_text"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_run_data_collection",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "params",
+        "response_format",
+        "target_type"
+      ],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_run_powershell",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "response_format",
+        "retry_minutes",
+        "script_text",
+        "success_exit_codes",
+        "target_type",
+        "timeout_minutes"
+      ],
+      "required": ["endpoint_id", "script_text"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_run_script",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "response_format",
+        "retry_minutes",
+        "script_text",
+        "skip_connectivity_check",
+        "success_exit_codes",
+        "target_type",
+        "timeout_minutes"
+      ],
+      "required": ["endpoint_id", "script_text"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_search",
+      "inputProperties": ["limit", "org_id", "query", "response_format", "verbose"],
+      "required": ["query"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_search_endpoints",
+      "inputProperties": [
+        "cursor",
+        "fields",
+        "limit",
+        "org_id",
+        "projection",
+        "query",
+        "response_format"
+      ],
+      "required": ["query"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_software_inventory_for_endpoint",
+      "inputProperties": [
+        "cursor",
+        "endpoint_id",
+        "find_by_name",
+        "limit",
+        "org_id",
+        "response_format"
+      ],
+      "required": ["endpoint_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_stop_instance",
+      "inputProperties": ["confirm", "dry_run", "instance_id", "org_id"],
+      "required": ["instance_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_uninstall_program",
+      "inputProperties": [
+        "confirm",
+        "dry_run",
+        "endpoint_id",
+        "name",
+        "org_id",
+        "params",
+        "response_format",
+        "target_type"
+      ],
+      "required": ["endpoint_id", "params"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_automation",
+      "inputProperties": ["automation_id", "body", "confirm", "dry_run", "org_id"],
+      "required": ["automation_id", "body"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_data_source",
+      "inputProperties": ["body", "confirm", "data_source_id", "dry_run"],
+      "required": ["data_source_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_endpoint",
+      "inputProperties": ["body", "confirm", "dry_run", "endpoint_id", "org_id"],
+      "required": ["body", "endpoint_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_endpoint_agent_deployment",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_enterprise",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_group",
+      "inputProperties": ["body", "confirm", "dry_run", "group_id", "org_id"],
+      "required": ["group_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_me",
+      "inputProperties": ["body", "confirm", "dry_run"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_organization",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id"],
+      "required": [],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_package",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id", "package_id"],
+      "required": ["package_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_remediation",
+      "inputProperties": ["body", "confirm", "cve_id", "dry_run", "org_id", "remediation_id"],
+      "required": ["cve_id", "remediation_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_remote_session",
+      "inputProperties": ["body", "confirm", "dry_run", "endpoint_id", "org_id", "session_id"],
+      "required": ["endpoint_id", "session_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_report",
+      "inputProperties": ["body", "confirm", "dry_run", "report_id"],
+      "required": ["report_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_report_subscription",
+      "inputProperties": ["body", "confirm", "dry_run", "subscription_id"],
+      "required": ["subscription_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_role",
+      "inputProperties": ["body", "confirm", "dry_run", "role_id"],
+      "required": ["body", "role_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_script",
+      "inputProperties": ["body", "confirm", "dry_run", "script_id"],
+      "required": ["script_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_setting",
+      "inputProperties": ["body", "confirm", "dry_run", "setting_id"],
+      "required": ["setting_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_user",
+      "inputProperties": ["body", "confirm", "dry_run", "user_id"],
+      "required": ["body", "user_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_update_version",
+      "inputProperties": ["body", "confirm", "dry_run", "org_id", "package_id", "version_id"],
+      "required": ["package_id", "version_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_upload_software_chunk",
+      "inputProperties": [
+        "body",
+        "confirm",
+        "dry_run",
+        "org_id",
+        "package_id",
+        "platform",
+        "upload_id",
+        "version_id"
+      ],
+      "required": ["package_id", "platform", "upload_id", "version_id"],
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "hasOutputSchema": true
+    },
+    {
+      "name": "action1_wait_for_automation",
+      "inputProperties": [
+        "endpoint_id",
+        "instance_id",
+        "org_id",
+        "poll_interval_seconds",
+        "response_format",
+        "timeout_seconds"
+      ],
+      "required": ["instance_id"],
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "hasOutputSchema": true
+    }
+  ],
+  "resources": ["action1://me", "action1://orgs", "action1://reports", "action1://templates"],
+  "resourceTemplates": [
+    "action1://endpoints/{orgId}",
+    "action1://groups/{orgId}",
+    "action1://vulnerabilities/{orgId}"
+  ],
+  "prompts": [
+    {
+      "name": "audit-vulnerabilities",
+      "arguments": ["top_n"]
+    },
+    {
+      "name": "check-my-permissions",
+      "arguments": []
+    },
+    {
+      "name": "patch-windows-fleet",
+      "arguments": ["group_query"]
+    },
+    {
+      "name": "run-script-fleetwide",
+      "arguments": ["group_query", "script_text"]
+    },
+    {
+      "name": "software-inventory-sweep",
+      "arguments": ["software_name"]
+    },
+    {
+      "name": "triage-offline-endpoints",
+      "arguments": ["stale_minutes"]
+    }
+  ]
+}

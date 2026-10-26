@@ -14,9 +14,7 @@ describe("isTransientNetworkError", () => {
   });
 
   it("matches nested error.cause.code values", () => {
-    expect(
-      isTransientNetworkError({ cause: { code: "UND_ERR_CONNECT_TIMEOUT" } }),
-    ).toBe(true);
+    expect(isTransientNetworkError({ cause: { code: "UND_ERR_CONNECT_TIMEOUT" } })).toBe(true);
   });
 
   it("rejects non-objects and missing codes", () => {
@@ -47,44 +45,57 @@ describe("withRetry", () => {
       if (attempts < 3) throw new Error("transient");
       return "ok";
     });
+    const onRetry = vi.fn();
     const out = await withRetry(fn, {
       maxAttempts: 5,
       baseDelayMs: 1,
       maxDelayMs: 2,
       retryOn: () => true,
+      onRetry,
     });
     expect(out).toBe("ok");
     expect(fn).toHaveBeenCalledTimes(3);
+    // One retry per failed attempt, numbered from 1.
+    expect(onRetry.mock.calls.map((c) => c[1] as number)).toEqual([1, 2]);
   });
 
   it("stops retrying after maxAttempts and rethrows the last error", async () => {
     const fn = vi.fn(async () => {
       throw new Error("permanent");
     });
+    const onRetry = vi.fn();
     await expect(
       withRetry(fn, {
         maxAttempts: 2,
         baseDelayMs: 1,
         maxDelayMs: 2,
         retryOn: () => true,
+        onRetry,
       }),
     ).rejects.toThrow("permanent");
     expect(fn).toHaveBeenCalledTimes(2);
+    // The last attempt throws at once: no retry is announced and no
+    // backoff is slept after it.
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledWith(expect.anything(), 1, expect.any(Number));
   });
 
   it("does not retry when retryOn returns false", async () => {
     const fn = vi.fn(async () => {
       throw new Error("non-retryable");
     });
+    const onRetry = vi.fn();
     await expect(
       withRetry(fn, {
         maxAttempts: 5,
         baseDelayMs: 1,
         maxDelayMs: 2,
         retryOn: () => false,
+        onRetry,
       }),
     ).rejects.toThrow("non-retryable");
     expect(fn).toHaveBeenCalledTimes(1);
+    expect(onRetry).not.toHaveBeenCalled();
   });
 
   it("aborts mid-flight when the signal fires", async () => {
@@ -133,7 +144,7 @@ describe("withRetry", () => {
     //   1. every delay lies inside the [0.75x, 1.25x] window around
     //      the deterministic exponential schedule;
     //   2. the *set* of observed delays is not all-identical (i.e.
-    //      jitter actually fires — would catch a stale spec where
+    //      jitter actually fires - would catch a stale spec where
     //      someone removed the randomness).
     const baseDelayMs = 100;
     const expected = baseDelayMs; // attempt 1 → baseDelayMs * 2^0
@@ -161,16 +172,16 @@ describe("withRetry", () => {
       expect(d).toBeGreaterThanOrEqual(expected * 0.75 - 1e-9);
       expect(d).toBeLessThanOrEqual(expected * 1.25 + 1e-9);
     }
-    // dispersion — extremely unlikely to all collide
+    // dispersion - extremely unlikely to all collide
     const unique = new Set(observed);
     expect(unique.size).toBeGreaterThan(1);
   });
 
-  // ----- Pass-13 Item 5: Retry-After ceiling ----------------------------
+  // ----- Retry-After ceiling ----------------------------
   //
   // A hostile or buggy upstream that sends `Retry-After: 86400` would
   // otherwise stall the retry loop for 24 h. We cap at
-  // RETRY_AFTER_CEILING_MS (60 s) — past that the exponential schedule
+  // RETRY_AFTER_CEILING_MS (60 s) - past that the exponential schedule
   // with jitter is a safer fallback. Cap is exposed so the test can
   // pin the constant; if it ever ticks up to 120 s we want a deliberate
   // test edit, not a silent regression.
@@ -182,7 +193,7 @@ describe("withRetry", () => {
       attempts += 1;
       if (attempts === 1) {
         const err = new Error("rate-limited") as Error & { retryAfterMs: number };
-        // 24 h in ms — pre-fix this would sleep for ~86,400,000ms.
+        // 24 h in ms - pre-fix this would sleep for ~86,400,000ms.
         err.retryAfterMs = 86_400_000;
         throw err;
       }
@@ -204,11 +215,7 @@ describe("withRetry", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(onRetry).toHaveBeenCalledWith(
-      expect.anything(),
-      1,
-      RETRY_AFTER_CEILING_MS,
-    );
+    expect(onRetry).toHaveBeenCalledWith(expect.anything(), 1, RETRY_AFTER_CEILING_MS);
   });
 
   it("passes through reasonable Retry-After values untouched (below the ceiling)", async () => {
@@ -218,7 +225,7 @@ describe("withRetry", () => {
       attempts += 1;
       if (attempts === 1) {
         const err = new Error("rate-limited") as Error & { retryAfterMs: number };
-        err.retryAfterMs = 5_000; // 5 s — well below the cap
+        err.retryAfterMs = 5_000; // 5 s - well below the cap
         throw err;
       }
       return "ok";

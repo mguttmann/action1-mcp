@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Action1Client } from "../../src/client/action1Client.js";
 import { Action1ApiError, Action1AuthError } from "../../src/client/errors.js";
 import type { AppConfig } from "../../src/config.js";
@@ -15,7 +15,22 @@ const cfg: AppConfig = {
   clientSecret: "secret",
   defaultTimeoutMinutes: "10",
   defaultRetryMinutes: "1440",
-  http: { port: 3000, host: "127.0.0.1", allowedOrigins: [], token: undefined },
+  lastSeenStaleMinutes: 10,
+  allowDestructive: false,
+  destructiveAutoConfirm: false,
+  allowAccountOps: false,
+  allowedOrgIds: [],
+  toolsets: [],
+  redactPii: false,
+  http: {
+    port: 3000,
+    host: "127.0.0.1",
+    allowedOrigins: [],
+    allowedHosts: [],
+    token: undefined,
+    allowNoAuth: false,
+    trustProxy: false,
+  },
 };
 
 interface FetchCall {
@@ -44,21 +59,17 @@ function mockFetch(responses: ScriptedResponse[]): {
   const queue = [...responses];
   const spy = vi.fn(async (url: string, init: RequestInit = {}) => {
     if (url.endsWith("/oauth2/token")) {
-      return new Response(
-        JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     calls.push({ url, init });
     const r = queue.shift() ?? { status: 500, body: "exhausted" };
     const status = r.status ?? 200;
     const headers = { "Content-Type": "application/json", ...(r.headers ?? {}) };
     const body =
-      r.body === undefined
-        ? null
-        : typeof r.body === "string"
-          ? r.body
-          : JSON.stringify(r.body);
+      r.body === undefined ? null : typeof r.body === "string" ? r.body : JSON.stringify(r.body);
     return new Response(body, { status, headers });
   });
   vi.stubGlobal("fetch", spy);
@@ -86,9 +97,7 @@ describe("Action1Client.request", () => {
   });
 
   it("returns the raw text when Content-Type is text/plain", async () => {
-    mockFetch([
-      { status: 200, body: "hello-world", headers: { "Content-Type": "text/plain" } },
-    ]);
+    mockFetch([{ status: 200, body: "hello-world", headers: { "Content-Type": "text/plain" } }]);
     const client = new Action1Client(cfg);
     const out = await client.request<string>("/x", { retry: false });
     expect(out).toBe("hello-world");
@@ -99,9 +108,7 @@ describe("Action1Client.request", () => {
     const client = new Action1Client(cfg);
     // Pre-warm the cache so we can observe invalidate().
     const invalidateSpy = vi.spyOn(client.tokens, "invalidate");
-    await expect(client.request("/x", { retry: false })).rejects.toBeInstanceOf(
-      Action1ApiError,
-    );
+    await expect(client.request("/x", { retry: false })).rejects.toBeInstanceOf(Action1ApiError);
     expect(invalidateSpy).toHaveBeenCalled();
   });
 
@@ -143,13 +150,13 @@ describe("Action1Client.request", () => {
     }
   });
 
-  // Pass-13 Item 8: a malformed Retry-After like "123 abc" used to be
-  // silently parsed as 123 seconds via parseFloat's lenient prefix
-  // semantics. After the fix the strict numeric regex rejects it, so
+  // A malformed Retry-After like "123 abc" must not be parsed as 123
+  // seconds via parseFloat's lenient prefix semantics. The strict
+  // numeric regex rejects it, so
   // the value falls through to the HTTP-date branch (which also fails
   // for "123 abc"), and the retry uses the default exponential
   // schedule. We pin the BEHAVIOUR: the request still completes
-  // successfully (retry happens) — we just no longer treat junk as a
+  // successfully (retry happens) - we just no longer treat junk as a
   // valid 123 s sleep instruction.
   it("rejects malformed Retry-After like '123 abc' and falls back to the exponential schedule", async () => {
     mockFetch([
@@ -160,7 +167,7 @@ describe("Action1Client.request", () => {
     try {
       const client = new Action1Client(cfg);
       const p = client.request<{ ok: number }>("/x", {
-        // shrink the schedule so the test stays fast — without the
+        // shrink the schedule so the test stays fast - without the
         // override this would honour the default 250ms base.
         retry: { baseDelayMs: 1, maxDelayMs: 2 },
       });
@@ -221,10 +228,10 @@ describe("Action1Client.request", () => {
     // status=0 and `.code` preserved.
     const spy = vi.fn(async (url: string) => {
       if (url.endsWith("/oauth2/token")) {
-        return new Response(
-          JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       const err = new Error("connection reset") as Error & { code?: string };
       err.code = "ECONNRESET";
@@ -239,17 +246,15 @@ describe("Action1Client.request", () => {
   });
 
   it("retries a transient network error (ECONNRESET) with default retry policy", async () => {
-    // Pass-9: the previous shouldRetry short-circuited on Action1ApiError
-    // and never tried network-errors. Now status=0 + transient code is
-    // retryable. Fail-fail-success with retry: default = 2 attempts in
+    // status=0 + a transient network code is retryable. Fail-fail-success with retry: default = 2 attempts in
     // total for fast tests (RETRY_OVERRIDE).
     let attempt = 0;
     const spy = vi.fn(async (url: string) => {
       if (url.endsWith("/oauth2/token")) {
-        return new Response(
-          JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       attempt += 1;
       if (attempt < 2) {
@@ -273,15 +278,14 @@ describe("Action1Client.request", () => {
   });
 
   it("does NOT retry an AbortError (caller cancelled)", async () => {
-    // Pass-9 contract: AbortError remains non-retryable even after the
-    // network-error retry widening, because the caller explicitly
+    // AbortError is never retried, also among network errors, because the caller explicitly
     // signalled cancellation.
     const spy = vi.fn(async (url: string) => {
       if (url.endsWith("/oauth2/token")) {
-        return new Response(
-          JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       const err = new Error("aborted");
       err.name = "AbortError";
@@ -299,10 +303,10 @@ describe("Action1Client.request", () => {
   it("propagates AbortError without retrying", async () => {
     const spy = vi.fn(async (url: string) => {
       if (url.endsWith("/oauth2/token")) {
-        return new Response(
-          JSON.stringify({ access_token: "tkn", expires_in: 3600 }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       const err = new DOMException("Aborted", "AbortError");
       throw err;
@@ -343,40 +347,42 @@ describe("Action1Client.request", () => {
 
   // SSRF host-pinning invariant. A `path` argument (e.g. from
   // action1_raw_request) must NEVER cause the outbound request to reach
-  // a different host than the configured baseUrl origin. Single-arg
-  // `new URL(base + path)` pins the host structurally, and buildUrl now
-  // asserts the resolved origin equals the base origin. These cases pin
-  // both: the adversarial paths still resolve to example.test, AND the
-  // request succeeds (the origin-assertion is a no-op on same-host).
+  // a different host than the configured baseUrl origin. Paths whose
+  // segments URL normalisation could reinterpret (empty segments, dot
+  // segments, backslashes, encoded slashes) are refused before any
+  // network call; the remaining odd-but-harmless shapes still go to the
+  // configured host.
   it.each([
     "//evil.com/x",
     "/../../../evil.com",
     "/\\evil.com/x",
-    "/@evil.com/x",
     "/%2F%2Fevil.com/x",
     "/x://evil.com",
     "///evil.com",
-  ])("pins the outbound host to baseUrl origin for adversarial path %j", async (path) => {
+  ])("refuses adversarial path %j without any network call", async (path) => {
     const { calls } = mockFetch([{ status: 200, body: { ok: true } }]);
     const client = new Action1Client(cfg);
-    await client.request(path, { retry: false });
-    expect(calls.length).toBe(1);
-    // The host of the actual fetch URL is always the configured base
-    // host — the path can never redirect to evil.com.
-    expect(new URL(calls[0]!.url).host).toBe("example.test");
-    expect(calls[0]!.url.startsWith("https://example.test/")).toBe(true);
+    await expect(client.request(path, { retry: false })).rejects.toThrow(/Refusing request/);
+    expect(calls.length).toBe(0);
   });
 
-  it("does not send any request when an origin-only baseUrl would still pin the host", async () => {
-    // Even with a degenerate origin-only base (no path), `//evil.com`
-    // stays a path segment and the host is pinned. Belt-and-suspenders:
-    // the request still goes to the configured host, not evil.com.
+  it("pins the outbound host to baseUrl origin for an authority-looking segment", async () => {
+    const { calls } = mockFetch([{ status: 200, body: { ok: true } }]);
+    const client = new Action1Client(cfg);
+    await client.request("/@evil.com/x", { retry: false });
+    expect(calls.length).toBe(1);
+    expect(new URL(calls[0]!.url).host).toBe("example.test");
+    expect(calls[0]!.url.startsWith("https://example.test/api/3.0/")).toBe(true);
+  });
+
+  it("refuses //evil.com even with an origin-only baseUrl", async () => {
     const { calls } = mockFetch([{ status: 200, body: { ok: true } }]);
     const originOnly: AppConfig = { ...cfg, baseUrl: "https://example.test" };
     const client = new Action1Client(originOnly);
-    await client.request("//evil.com/x", { retry: false });
-    expect(calls.length).toBe(1);
-    expect(new URL(calls[0]!.url).host).toBe("example.test");
+    await expect(client.request("//evil.com/x", { retry: false })).rejects.toThrow(
+      /Refusing request/,
+    );
+    expect(calls.length).toBe(0);
   });
 
   it("stringifies body and sets Content-Type for POST", async () => {

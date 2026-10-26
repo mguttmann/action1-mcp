@@ -3,7 +3,7 @@ import { resetConfigCache } from "../../src/config.js";
 
 let buildServer: typeof import("../../src/server.js").buildServer;
 let SERVER: ReturnType<typeof import("../../src/server.js").buildServer>;
-let CLIENT: import("@modelcontextprotocol/sdk/client/index.js").Client;
+let CLIENT: import("@modelcontextprotocol/client").Client;
 
 const ENDPOINT_UUID = "11111111-2222-3333-4444-555555555555";
 const GROUP_ID = "Patch_Ring0_Pilot_macOS_1779687913115";
@@ -15,12 +15,12 @@ beforeAll(async () => {
   process.env.ACTION1_ORG_ID = "00000000-0000-0000-0000-000000000001";
   resetConfigCache();
   buildServer = (await import("../../src/server.js")).buildServer;
-  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/client");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/server");
   const [clientTx, serverTx] = InMemoryTransport.createLinkedPair();
   SERVER = buildServer();
   await SERVER.server.connect(serverTx);
-  CLIENT = new Client({ name: "groups-test", version: "0.0.0" }, { capabilities: { tools: {} } });
+  CLIENT = new Client({ name: "groups-test", version: "0.0.0" });
   await CLIENT.connect(clientTx);
 }, 30_000);
 
@@ -38,11 +38,13 @@ function stubNoNetwork(): ReturnType<typeof vi.fn> {
   const fn = vi.fn(async (url: string) => {
     if (url.endsWith("/oauth2/token")) {
       return new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), {
-        status: 200, headers: { "Content-Type": "application/json" },
+        status: 200,
+        headers: { "Content-Type": "application/json" },
       });
     }
     return new Response(JSON.stringify({ error: "no route", url }), {
-      status: 599, headers: { "Content-Type": "application/json" },
+      status: 599,
+      headers: { "Content-Type": "application/json" },
     });
   });
   vi.stubGlobal("fetch", fn);

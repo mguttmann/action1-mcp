@@ -26,14 +26,15 @@ Thumbs.db
 .tsbuildinfo
 *.tsbuildinfo
 
-# MCPB bundle staging area (ts → js output for the bundle)
+# MCPB staging area is build/mcpb/ (ignored via build/ above); mcpb/server/
+# was the staging area of builds before 0.6.0.
 mcpb/server/
 
-# Claude Code session cache
+# Local Claude Code settings
 .claude/
 
-# Tool metadata
-.omo/
-.sisyphus/
-# CEO memory directory (also self-protected by .remember/.gitignore; listed here as defense-in-depth)
-.remember/
+# Candidate spec written by `npm run spec:fetch`; adopt it explicitly (see src/codegen/spec/SOURCE.md)
+src/codegen/spec/openapi.candidate.json
+
+# Report written by `npm run live:shapes` (scripts/live-shape-check.mjs)
+live-shape-report.json

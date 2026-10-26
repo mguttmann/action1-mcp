@@ -12,7 +12,7 @@ import { Action1ApiError, Action1AuthError } from "../../src/client/errors.js";
 // never lands in the summary, and (b) scrub the surviving origin+path
 // so a token-shaped value embedded as a path segment is masked too.
 
-describe("Action1ApiError — URL redaction in summary + toToolErrorText", () => {
+describe("Action1ApiError - URL redaction in summary + toToolErrorText", () => {
   it("drops a token-bearing query string from the summary line", () => {
     const err = new Action1ApiError({
       status: 401,
@@ -35,9 +35,8 @@ describe("Action1ApiError — URL redaction in summary + toToolErrorText", () =>
     // catches it even inside a URL pathname (which new URL keeps in its
     // encoded form). Action1 never puts tokens in path segments, but a
     // future / non-Action1 upstream reached via a misconfigured base URL
-    // could — this pins that redactPath now scrubs the pathname.
-    const jwt =
-      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.signaturesignaturesignature";
+    // could - this pins that redactPath now scrubs the pathname.
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.signaturesignaturesignature";
     const err = new Action1ApiError({
       status: 404,
       url: `https://h.test/api/${jwt}/end`,
@@ -62,7 +61,7 @@ describe("Action1ApiError — URL redaction in summary + toToolErrorText", () =>
   });
 });
 
-describe("Action1AuthError — message redaction", () => {
+describe("Action1AuthError - message redaction", () => {
   it("redacts a client_secret echoed in an OAuth error body", () => {
     const err = new Action1AuthError(
       'Token request failed (HTTP 400). Body: {"client_secret":"leakme123secret"}',
@@ -72,8 +71,7 @@ describe("Action1AuthError — message redaction", () => {
   });
 
   it("redacts a bare-JWT access_token echoed in the message", () => {
-    const jwt =
-      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.signaturesignaturesignature";
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.signaturesignaturesignature";
     const err = new Action1AuthError(`Token endpoint replied with ${jwt}`);
     expect(err.message).not.toContain(jwt);
     expect(err.message).toContain("[REDACTED]");

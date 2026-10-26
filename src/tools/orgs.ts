@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { Action1Client } from "../client/action1Client.js";
 import { cappedListResult, formatShape, listOutputShape, runTool } from "./helpers.js";
@@ -10,20 +10,14 @@ export function registerOrgTools(server: McpServer, client: Action1Client): void
     {
       title: "List organizations",
       description: "List every organization the configured API key can access.",
-      inputSchema: {
+      inputSchema: z.object({
         ...formatShape,
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(500)
-          .optional()
-          .describe("Max items to return."),
+        limit: z.number().int().min(1).max(500).optional().describe("Max items to return."),
         admin: z
           .boolean()
           .optional()
           .describe("If true, restrict to orgs the API key has admin rights on."),
-      },
+      }),
       outputSchema: listOutputShape,
       annotations: {
         readOnlyHint: true,

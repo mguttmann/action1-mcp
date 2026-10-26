@@ -15,7 +15,7 @@
 
   Answers are designed to be VERIFIABLE via direct string comparison against
   STABLE Action1 platform facts. Every question is answerable using ONLY the
-  MCP server's tools (no source-code reading required) — that's the skill's
+  MCP server's tools (no source-code reading required); that's the skill's
   hard rule "agents have access ONLY to the MCP servers". Every answer is a
   literal string, integer, or comma-separated list that won't change as
   endpoints are onboarded / decommissioned in any particular org.

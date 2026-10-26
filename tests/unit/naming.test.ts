@@ -3,7 +3,7 @@ import { deriveToolNames, toSnake } from "../../src/codegen/naming.js";
 
 // The codegen's verb-first naming heuristic is the only thing standing
 // between Action1's path-shaped operationIds (e.g. `endpoints_managed`)
-// and the 134 generated tool names that ship with the package. Silent
+// and the generated tool names that ship with the package. Silent
 // renames here would break agents that hard-code tool names, so pin a
 // representative sample of the (method, path) → name mapping.
 //
@@ -36,11 +36,11 @@ describe("toSnake", () => {
   });
 });
 
-describe("deriveToolNames — singletons and read collections", () => {
+describe("deriveToolNames - singletons and read collections", () => {
   it("GET /me → action1_list_me (heuristic; an override re-maps to action1_get_me elsewhere)", () => {
     // Note: `me` operationId gets a curated override to `action1_get_me`
     // in src/codegen/curated-overrides.ts. The pure naming heuristic
-    // emits `list_me` (no scope param, no resource id — falls through
+    // emits `list_me` (no scope param, no resource id - falls through
     // to CASE 5). Pinning the raw heuristic ensures the override gate
     // is the only thing changing the final name.
     expect(name("GET", "/me")).toBe("action1_list_me");
@@ -55,15 +55,11 @@ describe("deriveToolNames — singletons and read collections", () => {
   });
 
   it("GET /endpoints/groups/{orgId} → action1_list_endpoint_groups (parent qualifier)", () => {
-    expect(name("GET", "/endpoints/groups/{orgId}")).toBe(
-      "action1_list_endpoint_groups",
-    );
+    expect(name("GET", "/endpoints/groups/{orgId}")).toBe("action1_list_endpoint_groups");
   });
 
   it("GET /vulnerabilities/{orgId} → action1_list_vulnerabilities", () => {
-    expect(name("GET", "/vulnerabilities/{orgId}")).toBe(
-      "action1_list_vulnerabilities",
-    );
+    expect(name("GET", "/vulnerabilities/{orgId}")).toBe("action1_list_vulnerabilities");
   });
 
   it("GET /audit/events/{orgId} → action1_list_audit_events ('audit' parent qualifies generic 'events')", () => {
@@ -83,11 +79,9 @@ describe("deriveToolNames — singletons and read collections", () => {
   });
 });
 
-describe("deriveToolNames — single-resource (param-trailing) operations", () => {
+describe("deriveToolNames - single-resource (param-trailing) operations", () => {
   it("GET /endpoints/managed/{orgId}/{endpointId} → action1_get_endpoint", () => {
-    expect(name("GET", "/endpoints/managed/{orgId}/{endpointId}")).toBe(
-      "action1_get_endpoint",
-    );
+    expect(name("GET", "/endpoints/managed/{orgId}/{endpointId}")).toBe("action1_get_endpoint");
   });
 
   it("DELETE /endpoints/managed/{orgId}/{endpointId} → action1_delete_endpoint", () => {
@@ -103,17 +97,13 @@ describe("deriveToolNames — single-resource (param-trailing) operations", () =
   });
 
   it("PUT and PATCH both map to update_", () => {
-    expect(name("PUT", "/endpoints/managed/{orgId}/{endpointId}")).toBe(
-      "action1_update_endpoint",
-    );
+    expect(name("PUT", "/endpoints/managed/{orgId}/{endpointId}")).toBe("action1_update_endpoint");
   });
 });
 
-describe("deriveToolNames — POST/destructive write operations", () => {
+describe("deriveToolNames - POST/destructive write operations", () => {
   it("POST /policies/instances/{orgId} → action1_create_policy_instance", () => {
-    expect(name("POST", "/policies/instances/{orgId}")).toBe(
-      "action1_create_policy_instance",
-    );
+    expect(name("POST", "/policies/instances/{orgId}")).toBe("action1_create_policy_instance");
   });
 
   it("POST /automations/instances/{orgId} → action1_create_automation_instance", () => {
@@ -123,13 +113,11 @@ describe("deriveToolNames — POST/destructive write operations", () => {
   });
 
   it("POST /endpoints/groups/{orgId} → action1_create_endpoint_group", () => {
-    expect(name("POST", "/endpoints/groups/{orgId}")).toBe(
-      "action1_create_endpoint_group",
-    );
+    expect(name("POST", "/endpoints/groups/{orgId}")).toBe("action1_create_endpoint_group");
   });
 });
 
-describe("deriveToolNames — action verbs ({id}/move, {id}/requery, ...)", () => {
+describe("deriveToolNames - action verbs ({id}/move, {id}/requery, ...)", () => {
   it("POST /endpoints/managed/{orgId}/{endpointId}/move → action1_move_endpoint", () => {
     expect(name("POST", "/endpoints/managed/{orgId}/{endpointId}/move")).toBe(
       "action1_move_endpoint",
@@ -143,7 +131,7 @@ describe("deriveToolNames — action verbs ({id}/move, {id}/requery, ...)", () =
   });
 });
 
-describe("deriveToolNames — empty / degenerate path", () => {
+describe("deriveToolNames - empty / degenerate path", () => {
   it("GET / → action1_list_resources (empty-path fallback)", () => {
     expect(name("GET", "/")).toBe("action1_list_resources");
   });
@@ -153,7 +141,7 @@ describe("deriveToolNames — empty / degenerate path", () => {
   });
 });
 
-describe("deriveToolNames — curated conflict flag", () => {
+describe("deriveToolNames - curated conflict flag", () => {
   it("flags curatedConflict=true when the derived name matches a curated tool", () => {
     const curated = new Set(["action1_list_me"]);
     const r = deriveToolNames([{ method: "GET", path: "/me" }], curated);
@@ -170,7 +158,7 @@ describe("deriveToolNames — curated conflict flag", () => {
   });
 });
 
-describe("deriveToolNames — pass 2 (parent-qualifier disambiguation)", () => {
+describe("deriveToolNames - pass 2 (parent-qualifier disambiguation)", () => {
   it("disambiguates two paths that would collide via parent-qualifier prefix", () => {
     // Both /automations/instances/{}/{automationId} and
     // /automations/schedules/{}/{automationId} would derive to a bare
@@ -185,7 +173,7 @@ describe("deriveToolNames — pass 2 (parent-qualifier disambiguation)", () => {
     );
     // The disambiguator picks the second-tier literal ("instances" /
     // "schedules") because the parent literal ("automations") matches
-    // the param-derived resource ("automation") — a stutter that pass 2
+    // the param-derived resource ("automation") - a stutter that pass 2
     // breaks by appending the kind.
     expect(r[0]!.toolName).toBe("action1_get_automation_instance");
     expect(r[1]!.toolName).toBe("action1_get_automation_schedule");
@@ -193,11 +181,11 @@ describe("deriveToolNames — pass 2 (parent-qualifier disambiguation)", () => {
   });
 });
 
-describe("deriveToolNames — pass 3 (method-suffix tiebreaker)", () => {
+describe("deriveToolNames - pass 3 (method-suffix tiebreaker)", () => {
   it("appends the HTTP method when same-path same-resource ops still collide", () => {
     // POST + PUT to /x/{id}/upload both resolve to `action1_upload_x`
     // on pass 1 *and* pass 2 (no parent-qualifier disambiguation
-    // possible — same parent). Pass 3 appends `_post` / `_put`.
+    // possible - same parent). Pass 3 appends `_post` / `_put`.
     const r = deriveToolNames(
       [
         { method: "POST", path: "/x/{id}/upload" },
@@ -210,7 +198,7 @@ describe("deriveToolNames — pass 3 (method-suffix tiebreaker)", () => {
   });
 });
 
-describe("deriveToolNames — HTTP verb mapping", () => {
+describe("deriveToolNames - HTTP verb mapping", () => {
   it("GET on a single-resource path → get_", () => {
     expect(name("GET", "/things/{thingId}")).toMatch(/^action1_get_/);
   });
@@ -221,5 +209,67 @@ describe("deriveToolNames — HTTP verb mapping", () => {
 
   it("DELETE on a collection → delete_<singular>", () => {
     expect(name("DELETE", "/things")).toBe("action1_delete_thing");
+  });
+});
+
+describe("tool naming rule: action1_<verb>_<resource>", () => {
+  // Every tool name starts with a verb. The names below predate the
+  // rule; they stay because existing MCP consumers call tools by name
+  // (tests/integration/toolsListBaseline.test.ts). No other name may
+  // break the rule.
+  const VERBS = new Set([
+    "add",
+    "clone",
+    "create",
+    "delete",
+    "deploy",
+    "execute",
+    "export",
+    "get",
+    "init",
+    "list",
+    "move",
+    "reboot",
+    "remove",
+    "request",
+    "requery",
+    "revoke",
+    "run",
+    "search",
+    "stop",
+    "uninstall",
+    "update",
+    "upload",
+    "wait",
+  ]);
+  const GRANDFATHERED = new Set([
+    "action1_audit_log_search",
+    "action1_automations_summary",
+    "action1_cve_remediation_plan",
+    "action1_endpoint_groups_resolve",
+    "action1_endpoints_summary",
+    "action1_raw_request",
+    "action1_recurring_schedules",
+    "action1_report_export",
+    "action1_search",
+    "action1_software_inventory_for_endpoint",
+  ]);
+
+  it("every generated and curated tool name follows it, or is a listed legacy name", async () => {
+    const { GENERATED_TOOL_MANIFEST } = await import("../../src/tools/generated/index.js");
+    const { curatedToolNames } = await import("../../src/codegen/generate.js");
+    const names = [...GENERATED_TOOL_MANIFEST.map((m) => m.name), ...curatedToolNames()];
+    const offenders = names.filter((n) => {
+      const verb = /^action1_([a-z]+)_[a-z0-9_]+$/.exec(n)?.[1];
+      return !GRANDFATHERED.has(n) && (verb === undefined || !VERBS.has(verb));
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it("legacy names that break the rule are still exposed (no silent rename)", async () => {
+    const { GENERATED_TOOL_MANIFEST } = await import("../../src/tools/generated/index.js");
+    const { curatedToolNames } = await import("../../src/codegen/generate.js");
+    const all = new Set([...GENERATED_TOOL_MANIFEST.map((m) => m.name), ...curatedToolNames()]);
+    expect([...GRANDFATHERED].filter((n) => !all.has(n))).toEqual([]);
   });
 });

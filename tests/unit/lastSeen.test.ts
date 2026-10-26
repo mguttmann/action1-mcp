@@ -11,10 +11,7 @@ describe("isEndpointActuallyOnline", () => {
 
   it("returns offline when last_seen is older than threshold", () => {
     const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const r = isEndpointActuallyOnline(
-      { status: "Connected", last_seen: past },
-      10,
-    );
+    const r = isEndpointActuallyOnline({ status: "Connected", last_seen: past }, 10);
     expect(r.online).toBe(false);
     expect(r.reason).toContain("last_seen");
   });
@@ -42,10 +39,7 @@ describe("isEndpointActuallyOnline", () => {
 
   it("returns online when status is connected and last_seen is fresh", () => {
     const recent = new Date(Date.now() - 60 * 1000).toISOString();
-    const r = isEndpointActuallyOnline(
-      { status: "Connected", last_seen: recent },
-      10,
-    );
+    const r = isEndpointActuallyOnline({ status: "Connected", last_seen: recent }, 10);
     expect(r.online).toBe(true);
   });
 
@@ -60,7 +54,7 @@ describe("isEndpointActuallyOnline", () => {
     expect(isEndpointActuallyOnline({}).online).toBe(false);
   });
 
-  // Pass-N audit: the stale-after threshold used to be hardcoded to
+  // The stale-after threshold used to be hardcoded to
   // 10 min, with no way to widen it on networks where endpoints check
   // in every 30+ minutes. The new env knob lets operators override
   // the default; the call-sites in execution.ts / workflows.ts read

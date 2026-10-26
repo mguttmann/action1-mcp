@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeCsvFormulas } from "../../src/tools/wrappers/index.js";
+import { sanitizeCsvFormulas } from "../../src/utils/csv.js";
 
-// Pass-2 audit found three classes of CSV-injection / data-corruption
-// risks in the original sanitiser. These tests pin the new behaviour:
+// Three classes of CSV-injection / data-corruption risks. These tests
+// pin the behaviour:
 //
 //  1. Whitespace / NBSP / leading-quote bypasses are caught.
 //  2. Negative numbers and phone numbers are NOT corrupted.
 //  3. Quoted cells with embedded commas split correctly (RFC-4180-ish).
 
-describe("sanitizeCsvFormulas — pin behaviour", () => {
+describe("sanitizeCsvFormulas - pin behaviour", () => {
   it("prefixes a leading = with single quote", () => {
     expect(sanitizeCsvFormulas("=cmd|x")).toBe("'=cmd|x");
   });
@@ -21,11 +21,11 @@ describe("sanitizeCsvFormulas — pin behaviour", () => {
     expect(sanitizeCsvFormulas("\t=evil")).toBe("'\t=evil");
   });
 
-  it("catches a whitespace-prefixed formula (audit bypass)", () => {
+  it("catches a whitespace-prefixed formula", () => {
     expect(sanitizeCsvFormulas("  =cmd|x")).toBe("'  =cmd|x");
   });
 
-  it("catches an NBSP-prefixed formula (audit bypass)", () => {
+  it("catches an NBSP-prefixed formula", () => {
     expect(sanitizeCsvFormulas(" =cmd|x")).toBe("' =cmd|x");
   });
 
@@ -33,7 +33,7 @@ describe("sanitizeCsvFormulas — pin behaviour", () => {
     expect(sanitizeCsvFormulas('"=cmd|x"')).toBe('"\'=cmd|x"');
   });
 
-  it("does NOT corrupt a negative integer (audit false-positive)", () => {
+  it("does NOT corrupt a negative integer", () => {
     expect(sanitizeCsvFormulas("-100")).toBe("-100");
   });
 
@@ -70,8 +70,6 @@ describe("sanitizeCsvFormulas — pin behaviour", () => {
   });
 
   it("preserves header row that starts with a non-formula word", () => {
-    expect(sanitizeCsvFormulas("Endpoint,Status,LastSeen")).toBe(
-      "Endpoint,Status,LastSeen",
-    );
+    expect(sanitizeCsvFormulas("Endpoint,Status,LastSeen")).toBe("Endpoint,Status,LastSeen");
   });
 });

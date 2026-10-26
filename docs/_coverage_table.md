@@ -3,20 +3,23 @@
 
 # Action1 API <-> MCP Tool Coverage
 
-Spec: `src/codegen/spec/openapi.json` (SHA pinned). Total operations: **140**.
-Tool surface: **133** generated tool names + **33** curated tools.
+Spec: `src/codegen/spec/openapi.json` (SHA pinned). Total operations: **141**.
+Tool surface: **134** generated tool names + **33** curated tools.
 
-Curated tools that take precedence over generated equivalents are listed in
-`src/codegen/curated-overrides.ts`. Hand-picked name overrides for awkward
-auto-derived names live in the same file (`NAME_OVERRIDES`).
+An operation marked `skipped (curated)` has no generated tool because a
+curated tool covers it: either its generated name equals a curated tool
+name (the code generator, `src/codegen/generate.ts`, drops it) or its
+operationId is in `SKIP_OPERATION_IDS` (`src/codegen/curated-overrides.ts`).
+Hand-picked name overrides for awkward auto-derived names live in
+`NAME_OVERRIDES` in the same file.
 
 | Method | Path | operationId | Tool | Status |
 |---|---|---|---|---|
 | GET | /audit/events | audit_events_get | `action1_list_audit_events` | auto |
 | GET | /audit/events/{id} | audit_events_id_get | `action1_get_audit_event` | auto |
 | GET | /audit/export | audit_export_get | `action1_export_audit_log` | auto |
-| GET | /automations/action-templates | actions_templates_get | `—` | skipped (curated) |
-| GET | /automations/action-templates/{templateId} | actions_templates_templateId_get | `—` | skipped (curated) |
+| GET | /automations/action-templates | actions_templates_get | `-` | skipped (curated) |
+| GET | /automations/action-templates/{templateId} | actions_templates_templateId_get | `-` | skipped (curated) |
 | GET | /automations/instances/{orgId} | policies_instances_orgId_get | `action1_list_automation_instances` | auto |
 | POST | /automations/instances/{orgId} | policies_instances_orgId_post | `action1_create_automation_instance` | auto |
 | GET | /automations/instances/{orgId}/{automationId} | policies_instances_orgId_automationId_get | `action1_get_automation_instance` | auto |
@@ -49,10 +52,10 @@ auto-derived names live in the same file (`NAME_OVERRIDES`).
 | GET | /endpoints/groups/{orgId}/{groupId} | endpoints_groups_groupId | `action1_get_group` | auto |
 | PATCH | /endpoints/groups/{orgId}/{groupId} | endpoints_groups_groupId_patch | `action1_update_group` | auto |
 | GET | /endpoints/groups/{orgId}/{groupId}/contents | endpoints_groups_groupId_contents_get | `action1_list_group_contents` | auto |
-| POST | /endpoints/groups/{orgId}/{groupId}/contents | endpoints_groups_groupId_contents_post | `—` | skipped (curated) |
-| GET | /endpoints/managed/{orgId} | endpoints_managed | `—` | skipped (curated) |
+| POST | /endpoints/groups/{orgId}/{groupId}/contents | endpoints_groups_groupId_contents_post | `-` | skipped (curated) |
+| GET | /endpoints/managed/{orgId} | endpoints_managed | `-` | skipped (curated) |
 | DELETE | /endpoints/managed/{orgId}/{endpointId} | endpoints_managed_endpointId_delete | `action1_delete_endpoint` | auto |
-| GET | /endpoints/managed/{orgId}/{endpointId} | endpoints_managed_endpointId | `—` | skipped (curated) |
+| GET | /endpoints/managed/{orgId}/{endpointId} | endpoints_managed_endpointId | `-` | skipped (curated) |
 | PATCH | /endpoints/managed/{orgId}/{endpointId} | endpoints_managed_endpointId_patch | `action1_update_endpoint` | auto |
 | GET | /endpoints/managed/{orgId}/{endpointId}/missing-updates | endpoints_managed_endpointId_missing_updates | `action1_list_endpoint_missing_updates` | auto |
 | POST | /endpoints/managed/{orgId}/{endpointId}/move | endpoints_managed_endpointId_move | `action1_move_endpoint` | auto |
@@ -77,7 +80,7 @@ auto-derived names live in the same file (`NAME_OVERRIDES`).
 | DELETE | /me/report-subscriptions/{subscriptionId} | me_subscriptions_subscriptionId_delete | `action1_delete_report_subscription` | auto |
 | PATCH | /me/report-subscriptions/{subscriptionId} | me_subscriptions_subscriptionId_patch | `action1_update_report_subscription` | auto |
 | POST | /oauth2/token | oauth2_token | `(handled by TokenProvider)` | skipped |
-| GET | /organizations | organizations_get | `—` | skipped (curated) |
+| GET | /organizations | organizations_get | `-` | skipped (curated) |
 | POST | /organizations | organizations_post | `action1_create_organization` | auto |
 | DELETE | /organizations/{orgId} | organizations__orgId__delete | `action1_delete_organization` | auto |
 | PATCH | /organizations/{orgId} | organizations__orgId__patch | `action1_update_organization` | auto |
@@ -127,8 +130,8 @@ auto-derived names live in the same file (`NAME_OVERRIDES`).
 | GET | /software-repository/{orgId}/{packageId}/versions/{versionId} | packages_all_packageId_versions_versionId_get | `action1_get_version` | auto |
 | PATCH | /software-repository/{orgId}/{packageId}/versions/{versionId} | packages_all_packageId_versions_versionId_patch | `action1_update_version` | auto |
 | DELETE | /software-repository/{orgId}/{packageId}/versions/{versionId}/additional-actions/{actionId} | packages_all_packageId_versions_versionId_additional_actions_actionId_delete | `action1_delete_package_version_action` | auto |
-| POST | /software-repository/{orgId}/{packageId}/versions/{versionId}/upload | packages_all_packageId_versions_versionId_upload_post | `action1_init_software_upload` | auto |
-| PUT | /software-repository/{orgId}/{packageId}/versions/{versionId}/upload | packages_all_packageId_versions_versionId_upload_put | `action1_upload_software_chunk` | auto |
+| POST | /software-repository/{orgId}/{packageId}/versions/{versionId}/upload | packages_all_packageId_versions_versionId_upload_post | `action1_init_software_upload` | auto (returns an unsupported-operation error) |
+| PUT | /software-repository/{orgId}/{packageId}/versions/{versionId}/upload | packages_all_packageId_versions_versionId_upload_put | `action1_upload_software_chunk` | auto (returns an unsupported-operation error) |
 | GET | /software-repository/{orgId}/match-conflicts | packages_all_match_conflicts_get | `action1_get_match_conflicts_for_software_repository` | auto |
 | GET | /subscription/enterprise | license_enterprise_get | `action1_get_subscription` | auto |
 | POST | /subscription/enterprise/quote | license_enterprise_quote_post | `action1_request_enterprise_quote` | auto |
@@ -139,6 +142,7 @@ auto-derived names live in the same file (`NAME_OVERRIDES`).
 | GET | /updates/{orgId} | updates_orgId_get | `action1_list_updates` | auto |
 | GET | /updates/{orgId}/{packageId} | updates_orgId_packageId_get | `action1_get_update_package` | auto |
 | GET | /updates/{orgId}/{packageId}/versions/{versionId}/endpoints | updates_orgId_packageId_versions_versionId_endpoints_get | `action1_list_version_endpoints` | auto |
+| POST | /updates/{orgId}/approvals | updates_orgId_approvals | `action1_create_approval` | auto |
 | GET | /users | users_get | `action1_list_users` | auto |
 | POST | /users | users_post | `action1_create_user` | auto |
 | DELETE | /users/{userId} | users_userId_delete | `action1_delete_user` | auto |

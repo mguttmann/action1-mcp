@@ -10,34 +10,37 @@ pinned in `src/codegen/spec/openapi.sha256`).
 | Metric | Value |
 |---|---:|
 | Spec version | 3.1.0 (Action1 API 3.1.0, EU bundle) |
-| Pinned spec SHA-256 | `af75f1cc665b8d0ed2f6ed1992b1161f68a36c35013a2a1b168854185fc0eaed` |
-| Operations in spec | **140** |
-| Operations covered | **140 / 140 (100 %)** |
-| Auto-generated tools (`src/tools/generated/`) | 133 |
-| Operations replaced by curated infrastructure (no separate tool) | 6 (1 explicit skip `oauth2_token` + 5 curated-name conflicts: `endpoints_managed`, `endpoints_managed_endpointId`, `organizations_get`, `actions_templates_get`, `actions_templates_templateId_get` — see [`_coverage_table.md`](_coverage_table.md) "skipped (curated)" rows) |
-| Curated tools (incl. 6 workflow wrappers) | 33 |
-| High-level workflow wrappers | 6 |
-| **Total tools** | **166** |
+| Pinned spec SHA-256 | see `src/codegen/spec/openapi.sha256`; snapshot date and stats in [`SOURCE.md`](../src/codegen/spec/SOURCE.md) |
+| Operations in spec, generated tool names, curated tools | counted in the header of [`_coverage_table.md`](_coverage_table.md), which `scripts/regenerate-coverage-table.mjs` writes from the spec and the generated index |
+| Operations covered | every operation of the pinned snapshot (100 % of that snapshot, not of whatever Action1 serves today; `npm run spec:check` compares the two) |
+| Operations without a generated tool | `oauth2_token` (used internally), the operations in `SKIP_OPERATION_IDS`, and operations whose generated name equals a curated tool name; listed as `skipped` / `skipped (curated)` in [`_coverage_table.md`](_coverage_table.md) |
+| Operations with a tool that refuses to call Action1 | the two package-upload operations (`action1_init_software_upload`, `action1_upload_software_chunk`): they need request headers and a binary body the server does not send, so the tools return an explanatory error |
+| High-level workflow wrappers | see the table below |
 
-Six operations have **no** standalone auto-generated tool:
+Operations without a standalone generated tool fall into two groups. The
+generated [`_coverage_table.md`](_coverage_table.md) is the authoritative
+list:
 
-- `oauth2_token` (`POST /oauth2/token`) is the only **explicitly skipped**
-  operation (`SKIP_OPERATION_IDS` in `src/codegen/curated-overrides.ts`).
-  It's invoked transparently by every other tool via `TokenProvider`.
-  Exposing it as a tool would let an agent bypass the proactive 5-minute
-  refresh, in-flight deduplication, and refresh_token fallback that the
-  provider implements.
-- Five further operations are dropped at codegen-time because a curated
-  tool of the same generated name already owns the semantics:
-  `endpoints_managed`, `endpoints_managed_endpointId`, `organizations_get`,
-  `actions_templates_get`, `actions_templates_templateId_get`. See the
-  `skipped (curated)` rows in [`_coverage_table.md`](_coverage_table.md)
-  for the exact paths and the curated tools that replace them.
+- **Explicit skips** in `SKIP_OPERATION_IDS`
+  (`src/codegen/curated-overrides.ts`), each with a comment. `oauth2_token`
+  (`POST /oauth2/token`) is invoked transparently by every other tool via
+  `TokenProvider`; exposing it would let an agent bypass the proactive
+  refresh, in-flight deduplication and refresh_token fallback. The group
+  membership operation (`endpoints_groups_groupId_contents_post`) is
+  replaced by the curated `action1_add_endpoint_to_group` and
+  `action1_remove_endpoint_from_group`.
+- **Name conflicts**: the code generator (`src/codegen/generate.ts`) scans
+  the curated tool names and drops a generated tool whose name equals one
+  of them, for example `endpoints_managed` (curated
+  `action1_list_endpoints`) and `organizations_get` (curated
+  `action1_list_organizations`). The header of
+  `src/tools/generated/index.ts` states how many operations were dropped
+  this way.
 
 `POST /automations/instances/{orgId}` (operationId
 `policies_instances_orgId_post`) **is** auto-generated as
-`action1_create_automation_instance` (verb-first generated name). The 33 curated tools (27 thematic + 6 wrappers, e.g.
-`action1_run_powershell`, `action1_deploy_update`,
+`action1_create_automation_instance` (verb-first generated name). The
+curated tools (e.g. `action1_run_powershell`, `action1_deploy_update`,
 `action1_reboot_endpoint`) coexist with that generated tool: the curated
 ones are the safe default for the common case (single endpoint, single
 action, payload quirks pre-encoded), the generated one is available for
@@ -53,14 +56,14 @@ high-level wrappers.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ Curated tools (27) + Workflow wrappers (6)                            │
+│ Curated tools + workflow wrappers                                    │
 │ • script execution (Win + Mac + OS-aware), with target_type:Endpoint │
 │   or EndpointGroup                                                    │
 │ • execute_and_wait (POST + poll + filtered output)                    │
 │ • get_endpoint with /general → canonical path + list-fallback         │
 │ • CVE remediation plan, audit log search, software inventory, …      │
 ├──────────────────────────────────────────────────────────────────────┤
-│ Auto-generated tools (133, verb-first names)                          │
+│ Auto-generated tools (verb-first names)                               │
 │ • one tool per spec operation, snake_case input names                 │
 │ • shared runtime: pagination, destructive guard, error mapping        │
 │ • Action1 OpenAPI 3.1.0, SHA-pinned, regenerable                      │
@@ -68,17 +71,17 @@ high-level wrappers.
 │ Shared infrastructure                                                  │
 │ • Action1Client (auth, retry, pagination, error mapping)               │
 │ • TokenProvider (refresh_token fallback, 5-min proactive refresh)      │
-│ • OrgResolver (fuzzy name match, session cache)                        │
 │ • Three-layer destructive guard (env + confirm + dry_run)              │
 │ • Structured stderr logger with auth-key redaction                     │
 │ • Markdown auto-table renderer                                         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-The skip list (`src/codegen/curated-overrides.ts`) only blocks
-`oauth2_token`. Curated and auto-generated tools coexist by name (no
-collisions; tool names are namespaced as `action1_<operationId>` for
-generated and `action1_<verb>_<noun>` for curated).
+Curated and generated tools share one namespace (`action1_<verb>_<noun>`).
+A generated name that would collide with a curated one is dropped by the
+generator, which also resolves collisions among generated names and
+fails on any duplicate it cannot resolve, so a name never refers to two
+tools.
 
 ## High-level workflow wrappers (`src/tools/wrappers/`)
 
@@ -101,38 +104,33 @@ The auto-generated mapping covers every operation in the spec, in
 alphabetical order by path then method. It is regenerated on every
 codegen run.
 
-→ See [`_coverage_table.md`](_coverage_table.md) (140 rows).
+→ See [`_coverage_table.md`](_coverage_table.md).
 
 ## Skip list rationale
 
-Maintained in [`src/codegen/curated-overrides.ts`](../src/codegen/curated-overrides.ts).
-The list is intentionally minimal:
+Maintained in [`src/codegen/curated-overrides.ts`](../src/codegen/curated-overrides.ts),
+with a reason next to each entry. The list is intentionally short: an
+operation is skipped only when a generated tool would be wrong or unsafe
+(token issuance) or could not express the spec's request (the array body
+of the group membership operation).
 
-- **`oauth2_token`** — token issuance is invisible to all callers; handled
-  by `TokenProvider` with proactive 5-min refresh, in-flight dedup, and a
-  `refresh_token` fallback that survives a temporarily-revoked secret
-  without re-exchanging client_credentials. Exposing it as a tool would
-  let an agent bypass that machinery.
-
-Note: `policies_instances_orgId_post` (POST /automations/instances/{orgId})
-was previously skipped on the assumption that the curated tools fully
-covered it. Audit feedback showed that the spec-defined payload supports
-EndpointGroup targets, multi-action batches, `MatchingFilters` /
-`UpdateRing` scopes, and library-script references — capabilities the
-narrow curated builders did not expose. The operation is now
-auto-generated, and the curated tools have been extended with a
-`target_type` parameter for the Endpoint / EndpointGroup distinction.
+`policies_instances_orgId_post` (POST /automations/instances/{orgId}) is
+deliberately **not** skipped: its spec payload supports EndpointGroup
+targets, multi-action batches, `MatchingFilters` / `UpdateRing` scopes and
+library-script references, which the curated builders do not expose.
 
 ## Verification
 
 - `npm run codegen` is idempotent: re-running on the same pinned spec
   produces byte-identical `src/tools/generated/index.ts`.
 - `tests/unit/specSha.test.ts` fails the build if `openapi.json` SHA-256
-  ever diverges from `openapi.sha256` (catches accidental edits or
-  upstream spec drift).
+  ever diverges from `openapi.sha256` (catches accidental edits of the
+  committed snapshot). It cannot see upstream changes: that is the job of
+  `npm run spec:check` and the weekly `.github/workflows/spec-drift.yml`
+  job, which compare the live Swagger UI spec with the pin.
 - The CI workflow at `.github/workflows/ci.yml` enforces a
   codegen-roundtrip check: every PR must regenerate cleanly with no
   uncommitted diff.
-- `npx @modelcontextprotocol/inspector --cli ... --method tools/list`
+- `npx -y @modelcontextprotocol/inspector@2.12.0 --cli ... --method tools/list`
   returns the full curated + auto-generated set with annotations,
   inputSchemas, and (where applicable) outputSchemas.

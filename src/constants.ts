@@ -1,6 +1,5 @@
-// Shared, tunable constants. The skill best-practice (`node_mcp_server.md`)
-// asks for a per-project CHARACTER_LIMIT constant; everything else lives
-// here so we don't have to chase magic numbers across the codebase.
+// Shared, tunable constants, kept in one place so size limits and
+// thresholds are not scattered as magic numbers across the codebase.
 
 /**
  * Soft cap on the *human-readable* output (Markdown text) of a single
@@ -14,16 +13,19 @@
 export const CHARACTER_LIMIT = 25_000;
 
 /**
- * Hard cap on the *items list* portion of a tool response, in bytes.
- * Sized so that with the parallel `structuredContent` block plus the
- * JSON-RPC envelope, we stay safely under the 1 MB MCP host wire limit.
- *
- *   400 KB items
- *     + 400 KB text (escaped, slightly bigger)
- *     + ~50 KB JSON-RPC envelope, headers, content[0] wrapper
- *   ≈ 850 KB on the wire — comfortably under 1 MB.
+ * Cap on the *items list* portion of a tool response, in UTF-8 bytes.
+ * The items appear twice on the wire (`structuredContent` and, in JSON
+ * mode, the escaped `content[0].text`), so the whole result is checked
+ * separately against `RESPONSE_BYTE_BUDGET`.
  */
 export const WIRE_LIMIT_BYTES = 400_000;
+
+/**
+ * Budget for one serialised tool result (text block + structuredContent,
+ * UTF-8 bytes), enforced centrally in `jsonResult` / `pagedListResult`.
+ * Leaves headroom for the JSON-RPC envelope under the 1 MB host limit.
+ */
+export const RESPONSE_BYTE_BUDGET = 900_000;
 
 /**
  * Default page size for upstream API pagination.
@@ -31,18 +33,16 @@ export const WIRE_LIMIT_BYTES = 400_000;
 export const DEFAULT_PAGE_SIZE = 200;
 
 /**
+ * Upper bound of the `limit` input of list tools (curated cursor tools
+ * and the generated paging inputs).
+ */
+export const MAX_LIST_LIMIT = 50_000;
+
+/**
  * Tool name max length per the remote-MCP protocol. Hosts (Claude
  * Desktop, claude.ai) reject names longer than 64 characters.
  */
 export const TOOL_NAME_MAX = 64;
-
-/**
- * `last_seen` freshness threshold (seconds). Action1 reports
- * `status: "Connected"` even when last_seen is hours old; we
- * additionally require last_seen within this window to consider an
- * endpoint truly online.
- */
-export const LAST_SEEN_FRESH_SECONDS = 600;
 
 /**
  * Default polling interval (ms) for `wait_for_automation` and friends.
@@ -61,9 +61,3 @@ export const DEFAULT_POLL_INTERVAL_MS = 5_000;
  * still useful but a 10 KB EULA wall doesn't poison every list call.
  */
 export const COMPACT_STRING_CEILING = 400;
-
-/**
- * Default polling timeout (ms) — 5 minutes. Cap below 1 hour to avoid
- * pathological runaway loops.
- */
-export const DEFAULT_POLL_TIMEOUT_MS = 5 * 60 * 1_000;

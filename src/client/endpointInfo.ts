@@ -16,19 +16,20 @@ export async function fetchEndpointInfo(
   client: Action1Client,
   orgId: string,
   endpointId: string,
+  signal?: AbortSignal,
 ): Promise<EndpointInfoResult> {
   const canonicalPath =
     "/endpoints/managed/" + encodeURIComponent(orgId) + "/" + encodeURIComponent(endpointId);
   try {
-    const data = await client.request<unknown>(canonicalPath);
+    const data = await client.request<unknown>(canonicalPath, signal ? { signal } : {});
     return { data, source: "canonical" };
   } catch (err) {
     if (err instanceof Action1ApiError && (err.status === 403 || err.status === 404)) {
       const all = await collect(
-        client.paginate<{ id?: unknown }>(
-          "/endpoints/managed/" + encodeURIComponent(orgId),
-          { limit: 200 },
-        ),
+        client.paginate<{ id?: unknown }>("/endpoints/managed/" + encodeURIComponent(orgId), {
+          limit: 200,
+          ...(signal ? { signal } : {}),
+        }),
       );
       const data = all.find((e) => e.id === endpointId);
       if (!data) {

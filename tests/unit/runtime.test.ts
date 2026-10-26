@@ -10,9 +10,9 @@ function fakeClient(impl: {
     request: impl.request ?? (() => Promise.resolve({ ok: true })),
     paginate:
       impl.paginate ??
-      (async function* () {
+      async function* () {
         return;
-      }),
+      },
   } as unknown as Action1Client;
 }
 
@@ -73,6 +73,123 @@ describe("runGenerated", () => {
     });
     // pagedFetch should stop after returning 7 items
     expect((r.structuredContent as { count: number }).count).toBe(7);
+  });
+
+  it("caps a paginated list at limit without a cursor when the upstream returns more", async () => {
+    const client = fakeClient({
+      request: () =>
+        Promise.resolve({ items: Array.from({ length: 10 }, (_, i) => ({ i })), total_items: 10 }),
+    });
+    const r = await runGenerated({
+      client,
+      toolName: "test",
+      method: "GET",
+      path: "/items",
+      queryParams: { limit: 3, from: 0 },
+      paginated: true,
+      responseFormat: "json",
+    });
+    const s = r.structuredContent as { items: unknown[]; count: number; has_more: boolean };
+    expect(s.items).toHaveLength(3);
+    expect(s.count).toBe(3);
+    expect(s.has_more).toBe(true);
+  });
+
+  it.each([
+    ["an envelope", (items: unknown[]) => ({ items })],
+    ["a bare array", (items: unknown[]) => items],
+  ])(
+    "caps a non-paginated list at limit when the upstream returns more (%s)",
+    async (_label, wrap) => {
+      const client = fakeClient({
+        request: () => Promise.resolve(wrap(Array.from({ length: 10 }, (_, i) => ({ i })))),
+      });
+      const r = await runGenerated({
+        client,
+        toolName: "test",
+        method: "GET",
+        path: "/search",
+        queryParams: { query: "x", limit: 4 },
+        paginated: false,
+        responseFormat: "json",
+      });
+      const s = r.structuredContent as { items: unknown[]; count: number; total?: number };
+      expect(s.items).toHaveLength(4);
+      expect(s.count).toBe(4);
+      expect(s.total).toBe(10);
+    },
+  );
+
+  it("auto_paginate keeps walking a server-capped page when the ResultPage has next_page", async () => {
+    const pages = [
+      { items: [{ i: 1 }, { i: 2 }], total_items: "5", next_page: "/API/items?from=2" },
+      { items: [{ i: 3 }, { i: 4 }], total_items: "5", next_page: "/API/items?from=4" },
+      { items: [{ i: 5 }], total_items: "5", next_page: "" },
+    ];
+    const froms: unknown[] = [];
+    const client = fakeClient({
+      request: (_path, opts) => {
+        const from = (opts as { query: { from: number } }).query.from;
+        froms.push(from);
+        return Promise.resolve(pages[froms.length - 1] ?? { items: [] });
+      },
+    });
+    const r = await runGenerated({
+      client,
+      toolName: "test",
+      method: "GET",
+      path: "/items",
+      autoPaginate: true,
+    });
+    const sc = r.structuredContent as { count: number; has_more: boolean };
+    expect(sc.count).toBe(5);
+    expect(sc.has_more).toBe(false);
+    expect(froms).toEqual([0, 2, 4]);
+  });
+
+  it("auto_paginate stops on a full page when the ResultPage says it is the last one", async () => {
+    let calls = 0;
+    const client = fakeClient({
+      request: (_path, opts) => {
+        calls += 1;
+        const limit = (opts as { query: { limit: number } }).query.limit;
+        return Promise.resolve({
+          items: Array.from({ length: limit }, (_, i) => ({ i })),
+          next_page: "",
+        });
+      },
+    });
+    const r = await runGenerated({
+      client,
+      toolName: "test",
+      method: "GET",
+      path: "/items",
+      autoPaginate: true,
+    });
+    expect(calls).toBe(1);
+    expect((r.structuredContent as { has_more: boolean }).has_more).toBe(false);
+  });
+
+  it("rejects a dot-segment path before the destructive guard and without a request", async () => {
+    let called = false;
+    const client = fakeClient({
+      request: () => {
+        called = true;
+        return Promise.resolve({ ok: true });
+      },
+    });
+    for (const dry_run of [true, false]) {
+      const r = await runGenerated({
+        client,
+        toolName: "action1_delete_role_user",
+        method: "DELETE",
+        path: "/roles/R1/users/..",
+        destructive: { confirm: "YES", dry_run },
+      });
+      expect(r.isError).toBe(true);
+      expect((r.content[0] as { text: string }).text).toMatch(/dot segment/);
+    }
+    expect(called).toBe(false);
   });
 
   it("auto_paginate forwards filter query params (without pagination keys)", async () => {
@@ -143,21 +260,21 @@ describe("runGenerated", () => {
     expect(sc.items[0]!.run_script_text).toBe(longScript);
   });
 
-  it("auto_paginate emits compactor-note when verbose !== true and upstream is exhausted", async () => {
-    const client = fakeClient({
-      request: () =>
-        Promise.resolve({ items: [{ id: 1, x: "small" }] }),
-    });
-    const r = await runGenerated({
-      client,
-      toolName: "test",
-      method: "GET",
-      path: "/items",
-      autoPaginate: true,
-    });
-    const sc = r.structuredContent as { note?: string; has_more: boolean };
-    expect(sc.has_more).toBe(false);
-    expect(sc.note).toMatch(/verbose: true/);
+  it("auto_paginate emits the compactor note only when an item was compacted", async () => {
+    const run = (items: unknown[]) =>
+      runGenerated({
+        client: fakeClient({ request: () => Promise.resolve({ items }) }),
+        toolName: "test",
+        method: "GET",
+        path: "/items",
+        autoPaginate: true,
+      });
+    const compacted = (await run([{ id: 1, run_script_text: "y".repeat(5_000) }]))
+      .structuredContent as { note?: string; has_more: boolean };
+    expect(compacted.has_more).toBe(false);
+    expect(compacted.note).toMatch(/verbose: true/);
+    const small = (await run([{ id: 1, x: "small" }])).structuredContent as { note?: string };
+    expect(small.note).toBeUndefined();
   });
 
   it("destructive guard short-circuits when dry_run=true (default)", async () => {
@@ -181,14 +298,13 @@ describe("runGenerated", () => {
     expect((r.structuredContent as { dry_run: boolean }).dry_run).toBe(true);
   });
 
-  it("envelope-list path emits `count` even when not truncated (Pass-3 schema fix)", async () => {
+  it("envelope-list path emits `count` even when not truncated", async () => {
     // Bug history: runtime previously set `count` only on truncated
     // responses, while listOutputShape requires it on every payload.
     // This caused tools like action1_list_endpoint_groups to fail
     // structured-content validation on the happy path.
     const client = fakeClient({
-      request: () =>
-        Promise.resolve({ id: "1", type: "ResultPage", items: [{ a: 1 }, { b: 2 }] }),
+      request: () => Promise.resolve({ id: "1", type: "ResultPage", items: [{ a: 1 }, { b: 2 }] }),
     });
     const r = await runGenerated({
       client,
@@ -206,8 +322,7 @@ describe("runGenerated", () => {
     // the agent may want to read. The list-shape passthrough must
     // preserve them.
     const client = fakeClient({
-      request: () =>
-        Promise.resolve({ id: "abc", type: "ResultPage", items: [{ x: 1 }] }),
+      request: () => Promise.resolve({ id: "abc", type: "ResultPage", items: [{ x: 1 }] }),
     });
     const r = await runGenerated({
       client,

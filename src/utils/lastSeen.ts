@@ -6,10 +6,11 @@ export interface ConnectivityCheck {
 }
 
 /**
- * Default stale-after threshold (minutes). Call-sites in
- * `execution.ts` / `workflows.ts` override this with the parsed config
- * value at runtime; the constant lives here as a safe fallback for
- * tests / direct callers that don't have a config in scope.
+ * Default stale-after threshold (minutes). Every tool call site
+ * (`startAction.ts` for the execution tools and `execute_and_wait`,
+ * `endpoints.ts` for `get_endpoint` and `endpoints_summary`) passes the
+ * configured ACTION1_LAST_SEEN_STALE_MINUTES; the constant is the
+ * fallback for direct callers without a config in scope.
  *
  * Kept as a hardcoded default (no `loadConfig()` import) to avoid a
  * circular dependency: `loadConfig` is used by `destructiveGuard` which
@@ -84,7 +85,7 @@ export function isEndpointActuallyOnline(
  * The function also accepts a real ISO-8601 string with an explicit
  * `Z` or `±HH:MM` zone (passing it through Date.parse unchanged).
  */
-function parseTimestamp(value: string): number | undefined {
+export function parseTimestamp(value: string): number | undefined {
   const isoLike =
     /^(\d{4})-(\d{2})-(\d{2})[_T](\d{2})[-:](\d{2})[-:](\d{2})(?:[.,](\d+))?(Z|[+-]\d{2}:?\d{2})?$/;
   const m = isoLike.exec(value);

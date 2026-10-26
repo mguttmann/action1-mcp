@@ -3,7 +3,7 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "tests/**"],
+    ignores: ["dist/**", "node_modules/**", "coverage/**"],
   },
   ...tseslint.configs.recommendedTypeChecked,
   {
@@ -32,6 +32,35 @@ export default tseslint.config(
         "warn",
         { allowNumber: true, allowBoolean: true },
       ],
+    },
+  },
+  {
+    // Test doubles implement async interfaces (fetch, token providers)
+    // without awaiting anything; that is intended there.
+    files: ["tests/**/*.ts"],
+    rules: {
+      "@typescript-eslint/require-await": "off",
+      // `typeof import("...")` types the modules a test re-imports after
+      // vi.resetModules().
+      "@typescript-eslint/consistent-type-imports": [
+        "warn",
+        {
+          prefer: "type-imports",
+          fixStyle: "inline-type-imports",
+          disallowTypeAnnotations: false,
+        },
+      ],
+    },
+  },
+  {
+    // Build and release scripts are plain ESM JavaScript without type
+    // information: the rules that need types are off, the rest of the
+    // recommended set applies, and undefined names are errors.
+    files: ["scripts/**/*.mjs"],
+    ...tseslint.configs.disableTypeChecked,
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      "no-undef": "error",
     },
   },
 );

@@ -3,7 +3,7 @@
 // Per the pinned OpenAPI spec (EndpointGroupContentsPayload) this single
 // POST endpoint does BOTH add and remove: the body is an ARRAY whose items
 // carry a `method` discriminator. The generated tool typed the body as a
-// plain object (z.record) and therefore could never express the array — that
+// plain object (z.record) and therefore could never express the array; that
 // was the real "modify_group_membership can only add" limitation.
 //
 // NOTE: the spec array shape is documented but NOT live-proven (the operator's

@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { deriveHint } from "../../src/client/errors.js";
 
 // `deriveHint(status, url)` is what turns a raw HTTP error code into a
-// human/agent-readable suggestion. Pass-3 audit flagged that this lived
-// untested. These cases pin the contract: every status code that the
+// human/agent-readable suggestion. These cases pin the contract: every status code that the
 // curated UX promises a hint for, returns one with the expected
 // keywords.
 
@@ -19,8 +18,7 @@ describe("deriveHint", () => {
   });
 
   it("returns a vulnerabilities-specific hint on 403 with /vulnerabilities URL", () => {
-    const hint =
-      deriveHint(403, "https://app.eu.action1.test/api/3.0/vulnerabilities/o1") ?? "";
+    const hint = deriveHint(403, "https://app.eu.action1.test/api/3.0/vulnerabilities/o1") ?? "";
     expect(hint.toLowerCase()).toContain("vulnerabilities");
     expect(hint.toLowerCase()).toMatch(/scope|permission|role/);
   });
@@ -52,7 +50,7 @@ describe("deriveHint", () => {
   });
 
   it("returns undefined for unknown / unmapped codes", () => {
-    // 418 isn't in the explicit table — current impl returns undefined.
+    // 418 isn't in the explicit table - current impl returns undefined.
     expect(deriveHint(418, "https://app.eu.action1.test/api/3.0/x")).toBeUndefined();
     // 2xx success codes also have no hint.
     expect(deriveHint(204, "https://app.eu.action1.test/api/3.0/x")).toBeUndefined();

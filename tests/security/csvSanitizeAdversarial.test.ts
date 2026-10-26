@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeCsvFormulas } from "../../src/tools/wrappers/index.js";
+import { sanitizeCsvFormulas } from "../../src/utils/csv.js";
 
-// Pass-3 adversarial probes against the CSV sanitiser. These pin the
-// behaviour for the embedded-CR / embedded-LF + formula-trigger cases
-// the audit found to be a possible bypass.
+// Adversarial probes against the CSV sanitiser. These pin the
+// behaviour for the embedded-CR / embedded-LF + formula-trigger cases,
+// a possible bypass.
 
-describe("sanitizeCsvFormulas — adversarial probes (Pass 3)", () => {
+describe("sanitizeCsvFormulas - adversarial probes", () => {
   it("flags an embedded CR followed by a formula trigger as hazardous", () => {
     // Excel can interpret CR mid-cell as a soft-newline that starts a
     // fresh formula. We prefix the cell with `'` regardless of the
@@ -39,7 +39,7 @@ describe("sanitizeCsvFormulas — adversarial probes (Pass 3)", () => {
   });
 
   it("preserves a cell whose content is purely Unicode whitespace", () => {
-    // `\t` alone is whitespace — trimmed to empty → not hazardous.
+    // `\t` alone is whitespace - trimmed to empty → not hazardous.
     expect(sanitizeCsvFormulas("\t")).toBe("\t");
   });
 
@@ -52,8 +52,6 @@ describe("sanitizeCsvFormulas — adversarial probes (Pass 3)", () => {
   });
 
   it("preserves a header row that starts with `Endpoint` (no `+`/`-`/`=`)", () => {
-    expect(sanitizeCsvFormulas("Endpoint,Status,LastSeen")).toBe(
-      "Endpoint,Status,LastSeen",
-    );
+    expect(sanitizeCsvFormulas("Endpoint,Status,LastSeen")).toBe("Endpoint,Status,LastSeen");
   });
 });

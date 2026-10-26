@@ -1,75 +1,131 @@
 # Deployment Guide
 
-This server runs in two modes — **stdio** for local single-user use, and
-**Streamable HTTP** for hosted multi-user / shared-team setups. Pick the
-section that matches your topology.
+The server runs in two modes: **stdio** for local single-user use, and
+**Streamable HTTP** for a shared deployment. Claude Desktop users can also
+install the **MCPB bundle**. Pick the section that matches your setup.
 
 ## Decision matrix
 
 | Use case | Recommended | Why |
 |---|---|---|
-| One developer using Claude Code or Cursor on their workstation | **stdio** locally | Zero infra, credentials stay on the user's box. |
-| One MSP team using Claude.ai / Claude Desktop with custom connectors | **Streamable HTTP** behind reverse proxy with `MCP_HTTP_TOKEN` and TLS | Single deployment, no per-user setup, central rotation of API key. |
-| Non-engineer admins on Claude Desktop | **MCPB bundle** | One-click install in Claude Desktop, no Node required. |
+| One person using Claude Code or Cursor on their workstation | **stdio** locally | No infrastructure; credentials stay on the user's machine. |
+| A team using Claude.ai or another remote MCP client | **Streamable HTTP** on loopback behind a TLS reverse proxy | One deployment, one credential to rotate. Every client shares that credential (not multi-tenant). |
+| Admins on Claude Desktop | **MCPB bundle** | Installed from a file; Claude Desktop asks for the settings and provides Node.js. |
 
 ## stdio (local)
 
-The simplest deployment. Each user has the repo cloned, builds it, and points
-their MCP host at `dist/index.js`. See [`INSTALLATION.md`](INSTALLATION.md).
+Each user clones and builds the repo and points their MCP host at
+`dist/index.js`. See [`INSTALLATION.md`](INSTALLATION.md).
 
 ## Streamable HTTP (hosted)
 
-Stateless, per-request transport. One process serves many concurrent MCP
-clients.
+Stateless transport: one process serves many MCP clients. It always
+requires a bearer token and checks the `Host` and `Origin` headers (see
+[`SECURITY.md`](SECURITY.md#dns-rebinding-and-origin-validation)).
 
 ### Bare metal / VM
 
 ```bash
 git clone https://github.com/mguttmann/action1-mcp.git
 cd action1-mcp
+git checkout v<version>            # a release tag
 npm ci
 npm run build
-cp .env.example .env  # edit with your Action1 credentials
+npm prune --omit=dev               # drop the build and test tooling
+cp .env.example .env
+chmod 600 .env
+# Fill in ACTION1_BASE_URL, ACTION1_CLIENT_ID, ACTION1_CLIENT_SECRET,
+# ACTION1_ORG_ID and ACTION1_ALLOWED_ORG_IDS in .env.
 
-# Generate a strong shared secret for the MCP endpoint
-openssl rand -hex 32 >> .env  # paste as MCP_HTTP_TOKEN=<value>
+# Generate the shared secret for the MCP endpoint (GNU sed)
+sed -i "s/^MCP_HTTP_TOKEN=.*/MCP_HTTP_TOKEN=$(openssl rand -hex 32)/" .env
 
-ACTION1_ALLOW_DESTRUCTIVE=true \
-  node --env-file=.env dist/index.js --http --host 0.0.0.0 --port 3000
+node --env-file=.env dist/index.js --http --host 127.0.0.1 --port 3000
 ```
 
-> **Never bind to a public address without `MCP_HTTP_TOKEN` set.** Since
-> v0.4.0 the server refuses to start with a clear error message
-> (`Refusing to start: HTTP transport binds to non-loopback host '...' without
-> a Bearer token. Set MCP_HTTP_TOKEN (>=16 chars, e.g. \`openssl rand -hex
-> 32\`), or bind to 127.0.0.1 / localhost.`). Production deployments
-> must front the server with a reverse proxy that terminates TLS AND
-> set the token explicitly.
+Check it from the same machine:
+
+```bash
+curl -s http://127.0.0.1:3000/healthz
+# {"ok":true,"service":"action1-mcp-server","version":"<version>"}
+curl -s http://127.0.0.1:3000/readyz
+# {"ready":true,"service":"action1-mcp-server","version":"<version>","checks":{"config":"ok","token":"not_acquired"}}
+```
+
+`/healthz` is liveness (the process answers). `/readyz` is readiness: it
+answers 503 with `ready: false` when the configuration no longer loads
+(`checks.config: "invalid"`) or the most recent Action1 token request
+failed and no valid token is cached (`checks.token: "failing"`).
+`checks.token` is `not_acquired` until the first tool call fetches a
+token, then `cached`. Neither endpoint calls Action1 or shows error
+details; the cause of a failing token is in the log.
+
+This starts read-only: `ACTION1_ALLOW_DESTRUCTIVE` is not set, so every
+tool that changes state only returns previews. Turn it on only for a
+deployment that is meant to change your fleet, and never on a server
+reachable without TLS and the token.
+
+The server refuses to start when the HTTP settings are unsafe:
+
+- No `MCP_HTTP_TOKEN`:
+  `Refusing to start: HTTP transport requires MCP_HTTP_TOKEN (>= 16 chars, ...)`.
+  `MCP_HTTP_ALLOW_NO_AUTH=true` is accepted only on a loopback bind, for
+  local development.
+- A wildcard bind (`0.0.0.0`, `::`) without `MCP_HTTP_ALLOWED_HOSTS`:
+  `Refusing to start: HTTP transport binds to the wildcard address ...`.
 
 ### Reverse proxy with TLS (Caddy example)
 
-Recommended for any deployment reachable from outside `127.0.0.1`. Caddy is
-the simplest; nginx / traefik / Cloudflare Tunnel work equivalently.
+Put a TLS-terminating reverse proxy in front and keep the server on
+`127.0.0.1`. Caddy is the shortest; nginx, traefik or Cloudflare Tunnel
+work the same way.
 
 ```caddy
 mcp.example.com {
   reverse_proxy 127.0.0.1:3000
-
-  # Health check with auth bypass
-  @health path /healthz
-  handle @health {
-    reverse_proxy 127.0.0.1:3000
-  }
 }
 ```
 
-Behind that, run the server with `--host 127.0.0.1` so it is only reachable
-through the proxy. Connect from Claude.ai with:
+Add to `.env`:
+
+```dotenv
+# The name clients use. Caddy forwards the original Host header.
+MCP_HTTP_ALLOWED_HOSTS=mcp.example.com
+# The proxy on this machine is the only client of the server; trust its
+# X-Forwarded-For so the per-IP rate limit sees real client addresses.
+TRUST_PROXY=loopback
+```
+
+Without `TRUST_PROXY`, every request seems to come from `127.0.0.1` and
+all users share one rate-limit bucket (60 requests per minute). Set it
+only when the proxy is the only way to reach the server.
+
+With nginx, either forward the original host (`proxy_set_header Host
+$host;`) and list it in `MCP_HTTP_ALLOWED_HOSTS`, or leave nginx's default
+(`Host: 127.0.0.1:3000`), which the server accepts as its bind address.
+
+If browser-based clients connect directly, add their exact origins to
+`MCP_HTTP_ALLOWED_ORIGINS`; otherwise only loopback origins are accepted.
+Clients that send no `Origin` header are not affected.
+
+Connect from Claude.ai (Settings > Connectors > Add custom connector) or
+another remote client with:
 
 - URL: `https://mcp.example.com/mcp`
 - Header: `Authorization: Bearer <MCP_HTTP_TOKEN value>`
 
 ### systemd unit
+
+Keep the settings in a root-owned file that only systemd reads:
+
+```bash
+sudo install -d -m 700 /etc/action1-mcp
+sudo install -m 600 -o root -g root /opt/action1-mcp/.env /etc/action1-mcp/env
+```
+
+`EnvironmentFile` takes plain `KEY=value` lines. Comments must be on their
+own line (a `#` after a value becomes part of the value), and values are
+not shell-expanded.
 
 `/etc/systemd/system/action1-mcp.service`:
 
@@ -82,131 +138,183 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=action1mcp
+Group=action1mcp
 WorkingDirectory=/opt/action1-mcp
-EnvironmentFile=/opt/action1-mcp/.env
+EnvironmentFile=/etc/action1-mcp/env
 ExecStart=/usr/bin/node /opt/action1-mcp/dist/index.js --http --host 127.0.0.1 --port 3000
 Restart=on-failure
 RestartSec=5s
+
+# Hardening. Logs go to stderr (journald), so nothing needs write access.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/action1-mcp
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Do not add MemoryDenyWriteExecute=true: Node's JIT needs it off.
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
-systemctl daemon-reload
-systemctl enable --now action1-mcp
+sudo useradd --system --home /opt/action1-mcp --shell /usr/sbin/nologin action1mcp
+sudo systemctl daemon-reload
+sudo systemctl enable --now action1-mcp
 journalctl -u action1-mcp -f
+systemd-analyze security action1-mcp   # review the remaining exposure
 ```
+
+The hardening directives are a starting point; check them against your
+distribution's systemd version.
 
 ## MCPB bundle (for Claude Desktop)
 
-Anthropic's MCPB format packages the server, its dependencies, and the Node
-runtime as a single double-clickable installer. Best path for non-engineers
-who use Claude Desktop daily.
+An MCPB bundle is a zip file that Claude Desktop installs as an extension.
+Claude Desktop runs it with its built-in Node.js runtime and asks the user
+for the settings declared in `mcpb/manifest.json` (base URL, organization
+ID, client ID, client secret, allow-destructive checkbox). Account
+operations, the organization allowlist and the other optional switches
+are not exposed in the bundle, so they stay at their defaults.
 
 ### Build the bundle
 
 ```bash
+npm ci
 npm run build:mcpb
 ```
 
-This runs `scripts/build-mcpb.sh`, which builds `dist/`, stages the
-runtime under `mcpb/server/`, and packs the bundle to
-`dist/action1-mcp-<version>.mcpb`. The `mcpb/` directory holds the
-manifest (`manifest.json`), the icon, and a template `.env` that Claude
-Desktop fills in via prompts on first install.
+This runs `scripts/build-mcpb.sh`, which wipes and rebuilds `dist/`,
+stages the bundle under `build/mcpb/` (manifest, `mcpb/README.md`,
+`LICENSE`, `NOTICE`, a generated `THIRD_PARTY_NOTICES.md`, the compiled
+server and its runtime dependencies installed with
+`npm ci --omit=dev --ignore-scripts` from `package-lock.json`) and packs
+it to `dist/action1-mcp-<version>.mcpb`. The `mcpb/` directory holds
+only the manifest (`manifest.json`) and its README; Claude Desktop asks
+for the credentials through the manifest's `user_config` fields on
+install. The bundle contains no Node.js runtime and no credentials.
 
 ### Distribute
 
-- Email / share-link the `.mcpb` file.
-- Recipient double-clicks it. Claude Desktop walks them through the
-  per-credential setup.
+- The `release.yml` workflow builds the bundle and attaches
+  `action1-mcp-<version>.mcpb` to the GitHub Release of every `v*.*.*`
+  tag.
+- Users double-click the file; Claude Desktop walks them through the
+  settings.
 
-> Status: MCPB packaging is shipped — the `release.yml` workflow's MCPB
-> job builds and attaches `action1-mcp-<version>.mcpb` to every
-> `v*.*.*` GitHub Release. See [`mcpb/README.md`](../mcpb/README.md) for
-> the manifest layout and local build recipe.
+See [`mcpb/README.md`](../mcpb/README.md) for the manifest layout.
 
-## Cloudflare Workers (planned)
+## Cloudflare Workers (not supported)
 
-The Streamable HTTP transport is stateless, which makes it a natural fit for
-Workers. A Workers-native scaffold is on the roadmap; today the Express
-implementation depends on `node:http` and won't run unmodified on Workers.
-
-If you're keen to deploy on Workers now, port `src/index.ts::runHttp` to use
-`WebStandardStreamableHTTPServerTransport` from the SDK and a Workers
-`fetch` handler. Expect ~50 lines of glue code.
+The HTTP transport is stateless, which suits Workers, but the current
+implementation (`src/http.ts`) is built on Express and `node:http` and does
+not run on Workers unmodified. A port would replace `createHttpApp` with a
+Workers `fetch` handler around `WebStandardStreamableHTTPServerTransport`
+from `@modelcontextprotocol/server` and keep the same Host, Origin and
+token checks.
 
 ## Production checklist
 
-Before you flip a deployment from "internal smoke test" to "team production":
+Before a shared deployment goes live:
 
 - [ ] `ACTION1_BASE_URL`, `ACTION1_CLIENT_ID`, `ACTION1_CLIENT_SECRET`,
-  `ACTION1_ORG_ID` set from a secret manager (not a `.env` checked into a repo).
-- [ ] `MCP_HTTP_TOKEN` set to a 32+ byte random secret.
-- [ ] TLS terminated upstream of the server.
-- [ ] Bound to `127.0.0.1` (or container loopback) when behind a proxy.
-- [ ] `MCP_HTTP_ALLOWED_ORIGINS` set if browser clients (Claude.ai, Claude
-  Desktop with web preview) will connect — otherwise leave empty to allow
-  non-browser callers and skip the origin check entirely.
-- [ ] `ACTION1_ALLOW_DESTRUCTIVE` set deliberately. Default to `false` for
-  query-only deployments; set `true` only for environments where running
-  PowerShell on Windows endpoints is intended.
-- [ ] `ACTION1_LOG_LEVEL=info` in normal operation; bump to `debug` only for
-  triage. Log rotation handled by your platform (journald, Loki, etc.).
-- [ ] `/healthz` wired into your platform's liveness probe.
-- [ ] API credential rotated on a schedule (90 days is a reasonable default).
-  Action1 supports rotation without downtime — issue a new credential, update
-  `.env`, restart the server, then revoke the old one.
-- [ ] Audit log capturing every destructive call. The structured stderr logs
-  are JSON; pipe them to your central log store and alert on every
-  `destructive_*` event.
-- [ ] Backup-and-restore plan for the `.env` (the credentials are the only
+  `ACTION1_ORG_ID` come from a secret store or a root-only file
+  (`chmod 600`), never from a repository.
+- [ ] The Action1 credential's role has only the permissions the tools
+  need ([`permissions.md`](permissions.md)).
+- [ ] `ACTION1_ALLOWED_ORG_IDS` lists the organizations this deployment
+  may touch.
+- [ ] `MCP_HTTP_TOKEN` is 32 random bytes (`openssl rand -hex 32`).
+- [ ] TLS is terminated by a reverse proxy; the server binds to
+  `127.0.0.1` (or the container's loopback).
+- [ ] `MCP_HTTP_ALLOWED_HOSTS` lists the public name, and `TRUST_PROXY`
+  matches the proxy setup.
+- [ ] `MCP_HTTP_ALLOWED_ORIGINS` is set if browser clients connect
+  directly.
+- [ ] `ACTION1_ALLOW_DESTRUCTIVE` is set on purpose. Leave it off for
+  query-only deployments. `ACTION1_ALLOW_ACCOUNT_OPS` stays off unless
+  the deployment must manage users, roles or organizations.
+- [ ] `ACTION1_LOG_LEVEL` is set to the volume you want (`info` keeps
+  the `tool_call` lines; the `destructive_*` and `http_*` audit lines are
+  written at every level). Logs are collected and rotated by your
+  platform (journald, Loki, ...).
+- [ ] `/healthz` is wired into your liveness probe and `/readyz` into
+  your readiness probe or uptime check; both report the version.
+- [ ] Alerts on `destructive_executed`, `destructive_refused`, `critical`
+  lines and repeated `tool_call` errors (see [Observability](#observability)).
+- [ ] The API credential is rotated on a schedule (90 days is a
+  reasonable default): issue a new one, update the configuration,
+  restart, revoke the old one.
+- [ ] The configuration file is backed up (the credentials are the only
   state).
 
 ## Updating
 
 ```bash
 cd /opt/action1-mcp
-git fetch && git checkout <new-tag>
+git fetch --tags && git checkout v<new-version>
 npm ci
 npm run build
-systemctl restart action1-mcp
+npm prune --omit=dev
+sudo systemctl restart action1-mcp
 ```
 
-If `tests/unit/specSha.test.ts` fails after a `git pull`, the upstream Action1
-spec changed. Read `docs/CONTRIBUTING.md` for the regeneration workflow.
+Read the [`CHANGELOG`](../CHANGELOG.md) first: new versions can add
+required settings (0.6.0 made `MCP_HTTP_TOKEN` mandatory for `--http`).
+
+`tests/unit/specSha.test.ts` only checks that the committed spec snapshot
+and its pinned SHA agree; it does not contact Action1. To find out whether
+Action1 serves a different spec, run `npm run spec:check` (exit 1 with a
+diff summary on drift). The refresh workflow is in
+[`src/codegen/spec/SOURCE.md`](../src/codegen/spec/SOURCE.md).
 
 ## Rollback
 
-The server is stateless. To roll back, check out the previous tag, rebuild,
-and restart. There's no schema migration to undo.
+The server keeps no state. Check out the previous tag, rebuild and
+restart.
 
 ## Observability
 
-The server emits structured JSON-line logs to **stderr** with auto-redaction
-for `Bearer <token>`, `api-key-…` patterns, and any property whose key looks
-like `authorization` / `*_token` / `*_secret`. Stdout is reserved for MCP
-JSON-RPC and never logs.
-
-Pipe stderr to your log aggregator:
+The server writes structured JSON lines to **stderr** with credential
+redaction; stdout carries only MCP JSON-RPC. Under systemd, stderr goes
+to journald. Elsewhere, pipe it to your log collector:
 
 ```bash
-node dist/index.js --http 2>&1 | tee /var/log/action1-mcp/server.log | logger -t action1-mcp
+node --env-file=.env dist/index.js --http 2>> /var/log/action1-mcp/server.log
 ```
 
-Useful event names to alert on:
+The event list with fields is in
+[`SECURITY.md`](SECURITY.md#logging-and-audit-events). Useful alerts:
 
-- `Refusing to start: HTTP transport binds to non-loopback host '...'
-  without a Bearer token.` — the server now hard-fails on this
-  misconfiguration instead of warn-only-and-continue. Set
-  `MCP_HTTP_TOKEN` (>=16 chars) or bind to `127.0.0.1`/`localhost`.
-- `http_request_handler_failed` — uncaught error during a request.
-- `refresh_token_failed_falling_back_to_client_credentials` — once is fine
-  (e.g. after rotation); a flood means Action1 is rejecting your
-  client_credentials, check the secret.
+- `destructive_executed`: a state change was sent to Action1, with the
+  caller and a SHA-256 of the request body. Correlate with the
+  `tool_call` line of the same `request_id` for the result.
+- `http_auth_failed`, `http_host_rejected`, `http_origin_rejected`,
+  `http_rate_limited`: rejected HTTP requests (token guessing, DNS
+  rebinding attempts, floods), per client address.
+- `destructive_refused`: something tried a state change that the
+  configuration does not allow.
+- `fatal`, `uncaught_exception`, `unhandled_rejection` (critical): the
+  process is failing.
+- `http_request_handler_failed`: an HTTP request failed inside the server;
+  the client got a generic 500 with the same `correlation_id`.
+- `upstream_retry` bursts and `tool_call` lines with `outcome: "error"`:
+  Action1 is slow, rate-limiting or failing.
+- `refresh_token_failed_falling_back_to_client_credentials`: once is fine
+  (for example after rotation); a flood means Action1 rejects the
+  credential.

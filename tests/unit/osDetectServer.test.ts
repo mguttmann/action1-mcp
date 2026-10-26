@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { detectPlatform } from "../../src/utils/osDetect.js";
 
-// Finding 5.11 — bare "Server 20xx" SKUs (without the "Windows"
+// Bare "Server 20xx" SKUs (without the "Windows"
 // prefix) are common in Action1's `os_name` column for server-class
 // endpoints and used to fall through to "unknown", breaking the
 // PowerShell auto-route in execute_and_wait.
 
-describe("detectPlatform — Windows Server SKU coverage (finding 5.11)", () => {
+describe("detectPlatform - Windows Server SKU coverage", () => {
   it("matches bare 'Server 20xx' as Windows", () => {
     expect(detectPlatform({ os: "Server 2022" })).toBe("windows");
     expect(detectPlatform({ os: "Server 2019 Standard" })).toBe("windows");

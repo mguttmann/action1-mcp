@@ -9,7 +9,7 @@
 // Both should render as `YYYY-MM-DD HH:MM:SS UTC` in human-friendly
 // output so the agent can summarise to the user without re-parsing.
 //
-// Field-name heuristics live here too — they're the canonical list of
+// Field-name heuristics live here too - they're the canonical list of
 // "looks like a timestamp" / "looks like an id field" so the markdown
 // table renderer doesn't have to guess.
 
@@ -89,10 +89,7 @@ export function isTimestampField(name: string): boolean {
  * value is non-empty. Keeps Markdown output discoverable for humans
  * while letting an agent still grep out the id.
  */
-export function displayNameWithId(
-  name: unknown,
-  id: unknown,
-): string {
+export function displayNameWithId(name: unknown, id: unknown): string {
   const n = typeof name === "string" && name.length > 0 ? name : undefined;
   const i = typeof id === "string" && id.length > 0 ? id : undefined;
   if (n && i) return n + " (" + i + ")";

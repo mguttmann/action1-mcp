@@ -1,60 +1,83 @@
 # Contributing
 
 Thanks for thinking about contributing to `action1-mcp`. The project is
-small and opinionated — read this guide before opening a pull request to
-save us both time.
+small, opinionated and maintained by one person on a best-effort basis:
+read this guide before opening a pull request to save us both time.
+Everyone taking part follows the [Code of Conduct](../CODE_OF_CONDUCT.md).
+Bug reports and feature requests use the issue templates; security
+reports go to a private advisory (see
+[`SECURITY.md`](SECURITY.md#reporting-a-vulnerability)).
 
 ## Project layout
 
 ```
 src/
-  index.ts                   # entry: stdio | --http transport selection
-  server.ts                  # McpServer setup + tool registration order
-  config.ts                  # env validation (Zod), org-id resolution
+  index.ts                   # entry: CLI parsing, stdio | --http, --help, --version
+  http.ts                    # Streamable HTTP app: rate limit, Host/Origin, token
+  server.ts                  # McpServer setup, server instructions, registration
+  config.ts                  # env validation (Zod), --help env table, org allowlist
+  version.ts                 # server version, read from package.json
   client/
-    auth.ts                  # OAuth2 + refresh_token + 5-min refresh
-    action1Client.ts         # fetch wrapper, retry, pagination, error mapping
+    auth.ts                  # OAuth2 + refresh_token + proactive refresh
+    action1Client.ts         # fetch wrapper, retry, timeouts, path safety, errors
     endpointInfo.ts          # canonical /endpoint path + list-fallback
-    orgCache.ts              # session-scoped fuzzy org-name resolver
     pagination.ts, retry.ts, errors.ts (errors.ts redacts via logger)
   payloads/
-    windowsPowerShell.ts     # Windows PolicyInstance builder
+    policyInstance.ts        # platform-neutral PolicyInstance (template) builder
+    windowsPowerShell.ts     # Windows run_powershell builder (on policyInstance)
     macOsBash.ts             # macOS AutomationInstance builder (10 fields)
     shared.ts                # defaultName / humanize helpers (used by both)
   tools/
-    *.ts                     # 27 curated tools (+ 6 in wrappers/)
-    destructiveGuard.ts      # env + confirm + dry_run middleware
+    *.ts                     # curated tools, grouped by area
+    registry.ts              # strict inputs, toolset filter, tool_call logging
+    destructiveGuard.ts      # env switches + confirm + dry_run, audit events
+    orgScope.ts              # ACTION1_ALLOWED_ORG_IDS checks for bodies and raw paths
+    raw.ts                   # action1_raw_request
+    startAction.ts           # shared start path: OS routing, guard + POST, instance id
     helpers.ts               # jsonResult, runTool, orgIdShape, listOutputShape
-    wrappers/                # 6 high-level workflow wrappers
-    generated/               # 133 auto-generated tools (committed; verb-first names)
+    wrappers/                # high-level workflow wrappers
+    generated/index.ts       # auto-generated tools (written by npm run codegen, committed)
+    generated/runtime.ts     # hand-written shared runtime for the generated tools
   resources/
-    index.ts                 # 7 MCP resources (action1://...) with safeResourceRead
+    index.ts                 # MCP resources (action1://...)
   prompts/
-    index.ts                 # 6 slash-prompts
+    index.ts                 # slash-prompts
   utils/
-    logger.ts                # structured JSON-line stderr with redaction +
-                             # MCP logging/setLevel mutator
+    logger.ts                # structured JSON-line stderr with redaction
+    audit.ts                 # destructive_executed event, request body digest
+    bearerAuth.ts            # constant-time bearer token check for --http
+    requestContext.ts        # per-call request_id and counters for logging
+    pii.ts                   # ACTION1_REDACT_PII masking
+    csv.ts                   # CSV formula-injection defence
     markdownTable.ts, lastSeen.ts, osDetect.ts, filterOutput.ts
     cursor.ts                # buildCursor / parseCursor / pagedFetch
     capOutput.ts             # capItemList + endpoint projections
     format.ts                # humanise Action1 timestamps + display names
     sleep.ts                 # AbortSignal-aware setTimeout-Promise
+  spec/
+    generated.ts             # spec fields and enums curated tools read (npm run codegen)
+    entities.ts              # tolerant readers per entity (spec name, then legacy name)
+    time.ts                  # Action1 YYYY-MM-DD_HH-MM-SS timestamps
   codegen/
     generate.ts              # codegen entry point (npm run codegen)
     naming.ts                # verb-first heuristic + 3-pass conflict resolver
     outputSchema.ts          # 200-response → list / single / ok-status
-    curated-overrides.ts     # operationId skip list + NAME_OVERRIDES
+    zodEmit.ts               # request-body and response schemas → Zod source
+    curated-overrides.ts     # skip list, NAME_OVERRIDES, read-ish allowlist
+    specContract.ts          # paths of the spec fields and enums curated tools read
     spec/
       openapi.json           # pinned Action1 OpenAPI spec
       openapi.sha256         # SHA-256 of the JSON, asserted by tests
-      SOURCE.md              # provenance
+      SOURCE.md              # provenance + refresh workflow
+      known-undocumented-endpoints.json  # endpoints curated tools use outside the spec
   constants.ts               # CHARACTER_LIMIT, WIRE_LIMIT_BYTES, …
 tests/unit/                  # Vitest, no network
 tests/integration/           # SDK in-memory transport-pair tests
 tests/security/              # destructive-guard truth table + redaction matrix
 tests/performance/           # capItemList + markdown-table scaling
 docs/                        # this guide and friends
-evals/                       # 12 multi-hop questions for the skill harness
+evals/                       # evaluation questions for an LLM-driven harness
+scripts/                     # spec fetch, coverage and permissions tables, MCPB build
 ```
 
 ## Local setup
@@ -62,21 +85,33 @@ evals/                       # 12 multi-hop questions for the skill harness
 ```bash
 git clone https://github.com/mguttmann/action1-mcp.git
 cd action1-mcp
-npm install
-cp .env.example .env  # fill in your Action1 credentials
-npm run build         # tsc → dist/
-npm test              # 527 tests across 4 categories
+npm ci
+cp .env.example .env  # fill in your Action1 credentials (live testing only)
+npm run build         # tsc -> dist/ (no checks; use npm run check)
+npm test              # all test categories
 ```
 
 For live testing you also need credentials in `.env`. See
 [`INSTALLATION.md`](INSTALLATION.md).
+
+Node.js versions: the server itself runs on Node.js 22.12 or newer
+(`engines` in `package.json`; the CI job `node-floor` builds, tests and
+starts it on exactly 22.12). The development tools need a little more:
+ESLint 10 requires Node.js 22.13 or newer on the 22 line, so use 22.13+
+(or 24+) for `npm run lint` and `npm run check`.
+
+Windows: `npm run build:mcpb` runs `bash scripts/build-mcpb.sh`. Run it
+from Git Bash (part of Git for Windows), so `bash` is Git's and not the
+WSL launcher. The CI job `cross-os` builds the bundle that way on
+Windows and on macOS. The repository's `.gitattributes` keeps `*.sh`
+files at LF line endings, which bash needs.
 
 ## Workflows
 
 ### Adding a curated tool
 
 A curated tool is one where the OpenAPI spec doesn't capture the full
-contract — typically because of a payload quirk, a workflow that spans
+contract - typically because of a payload quirk, a workflow that spans
 multiple HTTP calls, or a transformation we apply to the response.
 
 1. Create or extend the file in `src/tools/` (e.g. `endpoints.ts`).
@@ -88,9 +123,27 @@ multiple HTTP calls, or a transformation we apply to the response.
    - `runDestructive(args, { toolName, preview }, async () => …)` after
      building the payload, before sending it.
 3. Add a registration call in `src/server.ts`.
-4. Write unit tests under `tests/unit/`. Cover both the happy path and
+4. Register the tool with a literal name, `server.registerTool("action1_...", ...)`,
+   shaped `action1_<verb>_<resource>` (`tests/unit/naming.test.ts` lists
+   the verbs and the few older names kept for compatibility).
+   The codegen scans every `.ts` file under `src/tools/` (except
+   `generated/`) for these names and drops a generated tool that would
+   collide; run `npm run codegen` afterwards.
+   `tests/integration/generatedTools.test.ts` fails if the scan and the
+   tools the server actually registers disagree.
+5. Read fields of Action1 records through `src/spec/entities.ts`, not
+   with hand-written field names or enum literals. A field or enum the
+   readers do not cover yet gets a path in `src/codegen/specContract.ts`,
+   `npm run codegen`, and a reader that takes the spec name first;
+   `tests/unit/specContract.test.ts` checks every used field and value
+   against the spec. Build test records with `specExample` from
+   `tests/helpers/specFixtures.ts`.
+6. Call only documented spec paths. An undocumented path must be added to
+   `src/codegen/spec/known-undocumented-endpoints.json` with a reason
+   (`tests/unit/curatedPaths.test.ts` enforces this).
+7. Write unit tests under `tests/unit/`. Cover both the happy path and
    each error branch.
-5. Add the tool to `docs/USAGE.md` and (if relevant)
+8. Add the tool to `docs/USAGE.md` and (if relevant)
    `docs/EXAMPLES.md`.
 
 ### Adding a high-level wrapper
@@ -121,7 +174,7 @@ Prompts are user-triggered. Use them when a workflow takes 3+ tool calls
 and the user shouldn't need to remember the order.
 
 1. Add a `server.registerPrompt(...)` block to `src/prompts/index.ts`.
-2. Define `argsSchema` as a Zod object — the args are *strings* in
+2. Define `argsSchema` as a Zod object - the args are *strings* in
    prompts (no booleans / numbers in the spec); coerce inside the
    prompt body if needed.
 3. Return `messages: [{ role: "user", content: { type: "text", text } }]`
@@ -132,33 +185,28 @@ and the user shouldn't need to remember the order.
 
 ### Re-running codegen
 
-Auto-generated tools live in `src/tools/generated/index.ts`. When the
-Action1 OpenAPI spec changes:
+Auto-generated tools live in `src/tools/generated/index.ts`. To check
+whether Action1 serves a different spec than the pinned one:
 
 ```bash
-# 1. Pull the new spec into src/codegen/spec/openapi.json
-#    (manual step — the bundle is JS-embedded, see SOURCE.md for
-#    the extraction recipe)
-
-# 2. Update the SHA pin
-shasum -a 256 src/codegen/spec/openapi.json | awk '{print $1}' > src/codegen/spec/openapi.sha256
-
-# 3. Regenerate the tools
-npm run codegen
-
-# 4. Verify the diff is what you expect
-git diff src/tools/generated/index.ts
-
-# 5. Run tests + build
-npm test && npm run build
-
-# 6. Commit spec + sha + generated as one atomic change
-git add src/codegen/spec/ src/tools/generated/
-git commit -m "Refresh Action1 OpenAPI spec to <date>"
+npm run spec:check   # exit 0: unchanged, 1: drift (with a diff summary)
 ```
 
-The `tests/unit/specSha.test.ts` test enforces step 2 — if you forget,
-the test fails with a SHA mismatch and the build refuses to proceed.
+To adopt a new spec, follow "Refreshing the snapshot" in
+[`src/codegen/spec/SOURCE.md`](../src/codegen/spec/SOURCE.md): `npm run
+spec:fetch`, move the candidate over `openapi.json`, update the SHA, `npm
+run codegen`, review the diff, `npm test`, and commit spec, SHA and
+generated file together.
+
+`tests/unit/specSha.test.ts` fails when the committed spec, its SHA and
+the generated file disagree; the CI codegen-roundtrip job fails when the
+committed generated file is not what `npm run codegen` produces.
+
+Every POST / PUT / PATCH / DELETE operation becomes a destructive tool
+(confirm + dry_run). The only way to emit one without the guard is a
+reviewed entry in `READISH_OPERATION_IDS` in
+`src/codegen/curated-overrides.ts`; `tests/integration/generatedTools.test.ts`
+holds this invariant against the generated file.
 
 ### Adding a generated tool override
 
@@ -175,14 +223,14 @@ parameter), the simplest fix is to:
 
 - **Strict TypeScript.** `tsconfig.json` already sets `strict`,
   `noUncheckedIndexedAccess`, `noImplicitOverride`, `noImplicitReturns`,
-  `exactOptionalPropertyTypes` is off (it's incompatible with the SDK
-  in 1.29 — keep an eye on it).
-- **Zod for every tool input.** Use `.describe()` on every parameter —
+  `exactOptionalPropertyTypes` is off (turning it on currently needs
+  small fixes in our own client code, not in the SDK).
+- **Zod for every tool input.** Use `.describe()` on every parameter -
   the description is the prompt the model reads.
-- **No `any`.** ESLint enforces `@typescript-eslint/no-explicit-any` as a
-  warning; don't introduce new ones.
+- **No `any`.** ESLint reports `@typescript-eslint/no-explicit-any` as an
+  error.
 - **Dependencies are scrutinised.** Adding a runtime dep is a yellow
-  flag — justify in the PR description.
+  flag - justify in the PR description.
 - **No `console.log`.** Use the `log` helper from `src/utils/logger.ts`
   or write to `process.stderr` directly. Stdout is reserved for MCP.
 - **Tool descriptions are prompt engineering.** Keep them tight. State
@@ -191,7 +239,14 @@ parameter), the simplest fix is to:
 
 ## Tests
 
-- `npm test` runs all 527 tests across `tests/unit/`, `tests/integration/`, `tests/security/`, `tests/performance/`. Add tests for any behaviour change.
+- `npm test` runs `tests/unit/`, `tests/integration/`, `tests/security/` and
+  `tests/performance/`. Add a test for any behaviour change; for a bug,
+  write the failing test first.
+- `tests/unit/docsConsistency.test.ts` checks the Markdown docs: relative
+  links and anchors resolve, no hand-written tool or test counts, and
+  `docs/_coverage_table.md` is current. After a codegen run, regenerate it
+  with `node scripts/regenerate-coverage-table.mjs` (and
+  `docs/permissions.md` with `node scripts/generate-permissions-table.mjs`).
 - Tests are pure-logic; no live API. Mock `fetch` via
   `vi.stubGlobal("fetch", …)` (see `tests/unit/auth.test.ts`).
 - Live smoke tests are documented in [`TESTING.md`](../TESTING.md). They
@@ -206,8 +261,12 @@ parameter), the simplest fix is to:
 - One logical change per commit.
 - Imperative mood subject ("Add X", not "Added X" or "Adds X").
 - Body explains *why*, not *what* (the diff shows what).
+- Commit under your own name and e-mail address.
 - Trailers: `Co-Authored-By: ...` for pair programming or AI-assisted
   authorship.
+- Messages and code comments are in English and describe the current
+  behaviour and its reason; history belongs in the commit message, not
+  in a comment.
 - Don't include `.env`, `dist/`, `node_modules/`, or any real customer
   identifiers (endpoint UUIDs, hostnames, user names) in commit
   messages.
@@ -240,23 +299,25 @@ done
 ```
 
 If anything matches, do not commit until you've replaced the value with a
-synthetic placeholder. `.env` is git-ignored — keep it that way.
+synthetic placeholder. `.env` is git-ignored - keep it that way.
 
 ## Pull requests
 
 - Open against `main`. There is no `develop` / `release` branch.
 - The PR description should answer: what changed, why, and how to test.
-- Tests must pass (`npm test`) and the build must produce 0 lint
-  warnings (`npm run build`).
+- The pull request template has the checklist. `npm run check` must pass
+  (lint with 0 warnings, typecheck of source and tests, format check, tests). `npm run build`
+  only compiles; it does not run the checks.
 - For changes that affect the auto-generated tools (codegen behaviour,
   spec pin, skip list), include the regenerated `index.ts` in the same
   PR.
 
 ## Filing issues
 
-- **Bug report**: include the version (commit SHA), the MCP host, the
-  exact tool call, and the full stderr output. Redact your real
-  credentials and customer identifiers.
+- **Bug report**: use the template. Include the version
+  (`node dist/index.js --version`, or the commit SHA), the MCP host, the
+  exact tool call and the stderr output. Redact credentials and customer
+  identifiers.
 - **Feature request**: explain the workflow you're trying to express
   through the agent, not the API endpoint you want wrapped. We add
   endpoints when they unblock workflows.
@@ -264,7 +325,13 @@ synthetic placeholder. `.env` is git-ignored — keep it that way.
   [private security advisory](https://github.com/mguttmann/action1-mcp/security/advisories/new),
   not a public issue.
 
+## Releases
+
+Releases are cut by the maintainer; the steps are in
+[`FAQ.md`](FAQ.md#how-is-a-release-cut).
+
 ## License
 
 MIT. By contributing, you agree your contributions are licensed under
-the same terms. See [`LICENSE`](../LICENSE).
+the same terms. See [`LICENSE`](../LICENSE). The vendored Action1 spec is
+not covered by the MIT License; see [`NOTICE`](../NOTICE).

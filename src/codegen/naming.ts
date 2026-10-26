@@ -2,8 +2,8 @@
 //
 // Action1's OpenAPI operationIds are path-shaped (e.g. `endpoints_managed`,
 // `endpoints_managed_endpointId`). Snake-casing them produces noun-first
-// names (`action1_endpoints_managed_endpoint_id`) that don't match the MCP
-// best-practice of `<service>_<action>_<resource>`.
+// names (`action1_endpoints_managed_endpoint_id`) instead of this server's
+// `action1_<verb>_<resource>` rule (tests/unit/naming.test.ts).
 //
 // This module re-derives a verb-first name from `(method, path)` instead.
 // The heuristic is intentionally conservative: when in doubt, fall back
@@ -125,18 +125,21 @@ function joinAvoidStutter(prefix: string, suffix: string): string {
 /**
  * For paths like `/automations/schedules/{}/{automationId}`, the parent
  * literal "automations" matches the resource "automation" (from the param)
- * — that's a stutter. The disambiguator is the *second* meaningful
+ * - that's a stutter. The disambiguator is the *second* meaningful
  * literal ("schedules" -> "schedule"). Returns null when no second-tier
  * literal exists.
  */
-function secondaryDisambiguator(meaningfulLiterals: string[], excludeResource: string): string | null {
+function secondaryDisambiguator(
+  meaningfulLiterals: string[],
+  excludeResource: string,
+): string | null {
   for (let i = 1; i < meaningfulLiterals.length; i += 1) {
     const lit = meaningfulLiterals[i]!;
     const [sing] = splitSingularPlural(lit);
     if (sing !== excludeResource) return sing;
   }
   // Even the leaf literal can serve when meaningful_literals.length===1
-  // and it's the same word (e.g. "/automations" only) — give up.
+  // and it's the same word (e.g. "/automations" only) - give up.
   return null;
 }
 
@@ -225,7 +228,7 @@ function deriveBaseName(method: string, ctx: NameContext, prefixParent: boolean)
   // parentQualifier collides with the resource (e.g.
   // `/automations/schedules/{}/{automationId}` and
   // `/automations/instances/{}/{automationId}` both have parent
-  // "automation" — but their second-tier literals "schedules" vs
+  // "automation" - but their second-tier literals "schedules" vs
   // "instances" set them apart).
   function fullPathQualifier(excludeResource: string): string | null {
     const parts = meaningfulLiterals
@@ -272,7 +275,9 @@ function deriveBaseName(method: string, ctx: NameContext, prefixParent: boolean)
       // resource (e.g. `/CVE-descriptions/{cveId}` → param resource "cve"
       // but parent literal "cve_descriptions" → use "cve_description"),
       // prefer the literal.
-      const lastLitSing = splitSingularPlural(meaningfulLiterals[meaningfulLiterals.length - 1]!)[0];
+      const lastLitSing = splitSingularPlural(
+        meaningfulLiterals[meaningfulLiterals.length - 1]!,
+      )[0];
       if (lastLitSing.includes(baseRes) && lastLitSing !== baseRes) {
         baseRes = lastLitSing;
       }
@@ -283,7 +288,7 @@ function deriveBaseName(method: string, ctx: NameContext, prefixParent: boolean)
       if (pq) {
         const candidate = joinAvoidStutter(pq, res);
         if (candidate === res) {
-          // Stutter (parent matches resource) — disambiguate by appending
+          // Stutter (parent matches resource) - disambiguate by appending
           // the *kind* literal (e.g. "schedule" or "instance" for an
           // /automations/schedules/{}/{automationId} path).
           const kind = secondaryDisambiguator(meaningfulLiterals, baseRes);
@@ -300,8 +305,7 @@ function deriveBaseName(method: string, ctx: NameContext, prefixParent: boolean)
   // sub-collection).
   if (!lastIsParam && secondToLastIsParam && lastLit !== null) {
     if (ACTION_VERBS.has(lastLit)) {
-      let res =
-        lastResourceIdParam !== null ? resourceFromParam(lastResourceIdParam) : null;
+      let res = lastResourceIdParam !== null ? resourceFromParam(lastResourceIdParam) : null;
       if (res === null) {
         // No resource-id; fall back to first meaningful literal
         const mfl = meaningfulLiterals[0] ?? "resource";
@@ -324,14 +328,13 @@ function deriveBaseName(method: string, ctx: NameContext, prefixParent: boolean)
     }
     // Sub-collection
     let [subSing, subPlur] = splitSingularPlural(lastLit);
-    const parent =
-      lastResourceIdParam !== null ? resourceFromParam(lastResourceIdParam) : null;
+    const parent = lastResourceIdParam !== null ? resourceFromParam(lastResourceIdParam) : null;
     if (parent) {
       subSing = joinAvoidStutter(parent, subSing);
       subPlur = joinAvoidStutter(parent, subPlur);
     } else if (
       // No real resource-id parent (only orgId scope) and the leaf is
-      // generic (e.g. "data", "errors") — pull the first meaningful
+      // generic (e.g. "data", "errors") - pull the first meaningful
       // literal in for context.
       GENERIC_LEAF.has(lastLit) &&
       meaningfulLiterals.length >= 1 &&
@@ -509,11 +512,12 @@ export function extractCuratedToolNames(sources: string[]): Set<string> {
   const out = new Set<string>();
   // Match: server.registerTool(\n    "name",
   // or:    server.registerTool("name",
-  const re = /server\.registerTool\(\s*"([^"]+)"/g;
+  // and tools registered through a helper with a spec object:
+  //         registerTemplateTool(server, client, { name: "action1_x", ... })
+  const patterns = [/server\.registerTool\(\s*"([^"]+)"/g, /\bname:\s*"(action1_[a-z0-9_]+)"/g];
   for (const src of sources) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(src)) !== null) {
-      out.add(m[1]!);
+    for (const re of patterns) {
+      for (const m of src.matchAll(re)) out.add(m[1]!);
     }
   }
   return out;

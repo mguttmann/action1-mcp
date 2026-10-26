@@ -5,7 +5,7 @@ import { redact, redactString } from "../../src/utils/logger.js";
 // the structured-log line. Tests both positive (must redact) and
 // negative (must NOT redact false positives).
 
-describe("redactString — value-pattern matrix", () => {
+describe("redactString - value-pattern matrix", () => {
   it("redacts a Bearer token but keeps the surrounding label", () => {
     const out = redactString("Authorization: Bearer abc123def456");
     expect(out).not.toContain("abc123def456");
@@ -25,8 +25,7 @@ describe("redactString — value-pattern matrix", () => {
   });
 
   it("redacts a bare JWT (no Bearer prefix)", () => {
-    const jwt =
-      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.signaturesignaturesignature";
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIifQ.signaturesignaturesignature";
     const out = redactString(`{"access_token":"${jwt}"}`);
     expect(out).not.toContain(jwt);
     expect(out).toContain("[REDACTED]");
@@ -78,7 +77,7 @@ describe("redactString — value-pattern matrix", () => {
   });
 });
 
-describe("redact — extended key-patterns (cookie / x-action1-token / bare token)", () => {
+describe("redact - extended key-patterns (cookie / x-action1-token / bare token)", () => {
   it("redacts a bare `token` key", () => {
     const out = redact({ token: "raw-bearer-shaped-secret" }) as Record<string, unknown>;
     expect(out.token).toBe("[REDACTED]");
@@ -105,7 +104,7 @@ describe("redact — extended key-patterns (cookie / x-action1-token / bare toke
 
   it("regression: access_token / refresh_token still redacted by specific key", () => {
     // The new bare `^token$` pattern must not steal the more-specific
-    // access_token / refresh_token classification — both still match
+    // access_token / refresh_token classification - both still match
     // their own patterns earlier in the order.
     const out = redact({
       access_token: "at_xxx",
@@ -121,15 +120,15 @@ describe("redact — extended key-patterns (cookie / x-action1-token / bare toke
   });
 });
 
-describe("redact — robustness against pathological inputs", () => {
+describe("redact - robustness against pathological inputs", () => {
   it("does not crash on a circular reference", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const a: Record<string, any> = { secret: "should-be-redacted" };
     a.loop = a;
     const out = redact(a) as Record<string, unknown>;
     // Top-level redaction still works.
-    expect((out as Record<string, unknown>).secret).toBeDefined();
-    // The cycle is broken — JSON.stringify(out) must succeed.
+    expect(out.secret).toBeDefined();
+    // The cycle is broken - JSON.stringify(out) must succeed.
     expect(() => JSON.stringify(out)).not.toThrow();
   });
 
@@ -150,7 +149,7 @@ describe("redact — robustness against pathological inputs", () => {
   });
 });
 
-describe("redact — key-pattern matrix on objects", () => {
+describe("redact - key-pattern matrix on objects", () => {
   it("redacts client_secret value, keeps grant_type", () => {
     const out = redact({ client_secret: "supersecret", grant_type: "client_credentials" });
     expect(out).toEqual({ client_secret: "[REDACTED]", grant_type: "client_credentials" });
@@ -172,7 +171,7 @@ describe("redact — key-pattern matrix on objects", () => {
   it("does NOT redact client_id (it is not a secret)", () => {
     const out = redact({ client_id: "api-key-AbCd@action1.com" });
     // The KEY isn't redacted, but the VALUE pattern still kicks in for
-    // api-key-* identifiers — that's intentional defence-in-depth.
+    // api-key-* identifiers - that's intentional defence-in-depth.
     expect(out).toEqual({ client_id: "[REDACTED]" });
   });
 
@@ -195,8 +194,8 @@ describe("redact — key-pattern matrix on objects", () => {
   });
 
   it("truncates pathological depth instead of stack-overflowing", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const root: Record<string, any> = {};
+    type Nested = { next?: Nested; password?: string };
+    const root: Nested = {};
     let cur = root;
     for (let i = 0; i < 50; i++) {
       cur.next = {};
@@ -204,7 +203,7 @@ describe("redact — key-pattern matrix on objects", () => {
     }
     cur.password = "deep-secret";
     const out = redact(root);
-    // We don't care exactly what the truncation looks like — just that
+    // We don't care exactly what the truncation looks like - just that
     // the deep secret never makes it back out as plain text.
     expect(JSON.stringify(out)).not.toContain("deep-secret");
   });

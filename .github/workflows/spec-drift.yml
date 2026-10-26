@@ -1,0 +1,27 @@
+name: Spec drift
+
+# Weekly check whether Action1's public Swagger UI still ships the pinned
+# OpenAPI spec (src/codegen/spec/openapi.sha256). A red run means the
+# live spec changed: refresh it as described in src/codegen/spec/SOURCE.md.
+# Uses only Node built-ins (no npm install) and read-only permissions.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spec-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - run: node scripts/fetch-spec.mjs --check

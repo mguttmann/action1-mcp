@@ -1,17 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  INCOMPLETE_TAIL_CONNECTORS,
-  INCOMPLETE_TAIL_RE,
-} from "../../src/codegen/connectors.js";
+import { INCOMPLETE_TAIL_CONNECTORS, INCOMPLETE_TAIL_RE } from "../../src/codegen/connectors.js";
 import { fitLead, fitTitle } from "../../src/codegen/generate.js";
 
-// Pass-7 fix (review item #6): the codegen's connector-strip walks back
-// past dangling clause-ending tokens like "...of." or "...the.". The
-// connector list was previously inlined inside generate.ts, which made it
-// impossible to import without triggering the module's top-level main()
-// side-effect (writing to src/tools/generated/index.ts at test time).
-//
-// connectors.ts is now a side-effect-free module exporting two surfaces:
+// The codegen's connector-strip walks back past dangling clause-ending
+// tokens like "...of." or "...the.". connectors.ts is a side-effect-free
+// module (generate.ts runs main() on import) exporting two surfaces:
 //   - INCOMPLETE_TAIL_CONNECTORS: the canonical token list
 //   - INCOMPLETE_TAIL_RE: a compiled regex anchored at end-of-string
 //
@@ -19,11 +12,9 @@ import { fitLead, fitTitle } from "../../src/codegen/generate.js";
 // regex anchor wrong) gets caught by CI.
 
 describe("INCOMPLETE_TAIL_CONNECTORS", () => {
-  it("includes the Pass-7-fixed determiners and quantifiers", () => {
-    // The Pass-7 review caught descriptions terminating on "...one." /
-    // "...their." / "...this." — those tokens were missing from the
-    // pre-Pass-7 list. Pin them so a future trim of the list can't
-    // silently drop the fix.
+  it("includes determiners and quantifiers", () => {
+    // Descriptions must not end on "...one." / "...their." / "...this.".
+    // Pin the tokens so a future trim of the list can't drop them.
     for (const t of ["of", "the", "one", "their", "this", "that", "these", "those"]) {
       expect(INCOMPLETE_TAIL_CONNECTORS).toContain(t);
     }
@@ -96,7 +87,7 @@ describe("INCOMPLETE_TAIL_RE", () => {
   });
 
   it("does not flag connector words mid-sentence", () => {
-    // Only the tail position matters — interior connectors are fine.
+    // Only the tail position matters - interior connectors are fine.
     expect(INCOMPLETE_TAIL_RE.test("One of the endpoints failed.")).toBe(false);
     expect(INCOMPLETE_TAIL_RE.test("Wait for the response to complete.")).toBe(false);
   });
@@ -130,7 +121,7 @@ describe("fitLead (lead-truncation, Cluster-D #2)", () => {
       "Trigger a synchronous remediation cycle for vulnerabilities flagged as critical inside the calling organisation for ";
     const out = fitLead(lead, lead.length - 10);
     expect(out).toMatch(/…$/);
-    // The connector at the cut point ("for") must be gone — neither
+    // The connector at the cut point ("for") must be gone - neither
     // INCOMPLETE_TAIL_RE nor a bare connector word may sit at the
     // pre-ellipsis position.
     const beforeEllipsis = out.replace(/…$/, "").trim();

@@ -1,10 +1,17 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceNotFoundError,
+  ResourceTemplate,
+} from "@modelcontextprotocol/server";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Action1Client } from "../client/action1Client.js";
 import { collect } from "../client/pagination.js";
 import { Action1ApiError } from "../client/errors.js";
 import { resolveOrgId } from "../config.js";
 import { capItemList } from "../utils/capOutput.js";
+import { piiRedactionEnabled, redactPii } from "../utils/pii.js";
+import { redactSecretKeys } from "../utils/logger.js";
 
 const JSON_MIME = "application/json";
 
@@ -13,7 +20,14 @@ interface CapNote {
   note: string;
 }
 
-function buildResourcePayload(items: unknown[], extra: Record<string, unknown> = {}): string {
+/** Credential-shaped keys always, personal data with ACTION1_REDACT_PII. */
+function cleanResource(data: unknown): unknown {
+  const masked = redactSecretKeys(data);
+  return piiRedactionEnabled() ? redactPii(masked) : masked;
+}
+
+function buildResourcePayload(rawItems: unknown[], extra: Record<string, unknown> = {}): string {
+  const items = cleanResource(rawItems) as unknown[];
   const cap = capItemList(items as Record<string, unknown>[]);
   const payload: Record<string, unknown> = {
     ...extra,
@@ -24,8 +38,7 @@ function buildResourcePayload(items: unknown[], extra: Record<string, unknown> =
   if (cap.truncated > 0) {
     const note: CapNote = {
       truncated: cap.truncated,
-      note:
-        "Resource truncated to fit the 1 MB host limit. For full data, use the equivalent paginated tool (e.g. action1_list_endpoints) which streams across multiple calls.",
+      note: "Resource truncated to fit the 1 MB host limit. For full data, use the equivalent paginated tool (e.g. action1_list_endpoints) which streams across multiple calls.",
     };
     payload.truncated = note.truncated;
     payload.note = note.note;
@@ -34,42 +47,32 @@ function buildResourcePayload(items: unknown[], extra: Record<string, unknown> =
 }
 
 /**
- * Wrap a resource handler so that downstream API failures land as a
- * structured JSON `{ error, status?, hint? }` payload instead of as a
- * raw JSON-RPC -32603 (which some MCP clients render as a hard crash).
- *
- * The wrapper always returns content[] so the resource read remains
- * "successful" at the MCP protocol level — but the JSON body carries
- * the error details. This matches the UX of tool isError responses.
+ * Run a resource handler and turn failures into JSON-RPC errors, as the
+ * MCP spec asks for `resources/read`: an upstream 404 becomes the SDK's
+ * ResourceNotFoundError, every other failure an InternalError
+ * (-32603) whose `data` carries the upstream status and hint. A failed
+ * read is never returned as successful content.
  */
 export async function safeResourceRead(
   uri: string,
   fn: () => Promise<string>,
 ): Promise<{ contents: { uri: string; mimeType: string; text: string }[] }> {
+  let text: string;
   try {
-    const text = await fn();
-    return { contents: [{ uri, mimeType: JSON_MIME, text }] };
+    text = await fn();
   } catch (err) {
-    const errorPayload: Record<string, unknown> = { error: "resource_read_failed" };
     if (err instanceof Action1ApiError) {
-      errorPayload.message = err.message;
-      errorPayload.status = err.status;
-      if (err.hint) errorPayload.hint = err.hint;
-    } else if (err instanceof Error) {
-      errorPayload.message = err.message;
-    } else {
-      errorPayload.message = String(err);
+      if (err.status === 404) throw new ResourceNotFoundError(uri, err.message);
+      throw new ProtocolError(ProtocolErrorCode.InternalError, err.message, {
+        uri,
+        status: err.status,
+        ...(err.hint ? { hint: err.hint } : {}),
+      });
     }
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: JSON_MIME,
-          text: JSON.stringify(errorPayload, null, 2),
-        },
-      ],
-    };
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ProtocolError(ProtocolErrorCode.InternalError, message, { uri });
   }
+  return { contents: [{ uri, mimeType: JSON_MIME, text }] };
 }
 
 export function registerResources(server: McpServer, client: Action1Client): void {
@@ -81,13 +84,13 @@ export function registerResources(server: McpServer, client: Action1Client): voi
     {
       title: "Current API identity",
       description:
-        "The authenticated API user (GET /me). Useful as a startup probe — agents can read this to know which permissions / role they have before calling potentially-403 tools.",
+        "The authenticated API user (GET /me). Useful as a startup probe - agents can read this to know which permissions / role they have before calling potentially-403 tools.",
       mimeType: JSON_MIME,
     },
     async (uri) =>
       safeResourceRead(uri.href, async () => {
         const data = await client.request<unknown>("/me");
-        return JSON.stringify(data, null, 2);
+        return JSON.stringify(cleanResource(data), null, 2);
       }),
   );
 
@@ -96,8 +99,7 @@ export function registerResources(server: McpServer, client: Action1Client): voi
     "action1://orgs",
     {
       title: "Visible organizations",
-      description:
-        "All organizations the configured API key can access (GET /organizations).",
+      description: "All organizations the configured API key can access (GET /organizations).",
       mimeType: JSON_MIME,
     },
     async (uri) =>
@@ -199,8 +201,8 @@ export function registerResources(server: McpServer, client: Action1Client): voi
   );
 }
 
+/** `default` or an empty value means ACTION1_ORG_ID; every org is checked against the allowlist. */
 function resolveOrgIdParam(raw: string | string[] | undefined): string {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value || value === "default") return resolveOrgId(undefined);
-  return value;
+  return resolveOrgId(!value || value === "default" ? undefined : value);
 }

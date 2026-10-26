@@ -17,9 +17,7 @@ describe("buildGroupContentsAdd", () => {
 
 describe("buildGroupContentsRemove", () => {
   it("emits a single-item array: method DELETE with top-level endpoint_id", () => {
-    expect(buildGroupContentsRemove("ep-2")).toEqual([
-      { method: "DELETE", endpoint_id: "ep-2" },
-    ]);
+    expect(buildGroupContentsRemove("ep-2")).toEqual([{ method: "DELETE", endpoint_id: "ep-2" }]);
   });
   it("throws on empty endpointId", () => {
     expect(() => buildGroupContentsRemove("")).toThrow();

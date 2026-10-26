@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkBearerHeader } from "../../src/utils/bearerAuth.js";
 
-// Pass-6 review #1: the Bearer-Auth middleware in `runHttp` had a
+// The Bearer-Auth middleware in `runHttp` had a
 // production-code change (`(.+)` → `([\s\S]+)`) that was untested.
 // `requireBearer` is private inside `runHttp()`, so we extracted the
 // validation into the pure function `checkBearerHeader` and test that
@@ -30,7 +30,7 @@ describe("checkBearerHeader", () => {
   });
 
   it("returns 'missing' for `Bearer` followed by only whitespace", () => {
-    // Pass-8 review: `"Bearer   \t\t"` matches the regex (captured = "\t\t"),
+    // `"Bearer   \t\t"` matches the regex (captured = "\t\t"),
     // trim drops to "" → return "missing". Pin the all-whitespace-token
     // branch so a future refactor that collapses providedStr.length===0
     // back into the timingSafeEqual path (returning "invalid") gets caught.
@@ -53,14 +53,14 @@ describe("checkBearerHeader", () => {
   });
 
   it("trims the captured token symmetrically with expectedToken", () => {
-    // Pass-4 review: avoid asymmetric trim that would silently 401
+    // Avoid asymmetric trim that would silently 401
     // when the caller pasted a token with stray whitespace.
     expect(checkBearerHeader(`Bearer ${TOKEN}   `, TOKEN)).toBe("ok");
     expect(checkBearerHeader(`Bearer   ${TOKEN}`, TOKEN)).toBe("ok");
   });
 
   it("tolerates CR/LF inside the captured group", () => {
-    // Pass-6 review: the `[\s\S]+` token group accepts headers with
+    // The `[\s\S]+` token group accepts headers with
     // literal CR/LF that arrived through a mis-configured proxy.
     // Node's HTTP parser usually strips these, but we are defensive.
     expect(checkBearerHeader(`Bearer ${TOKEN}\r\n`, TOKEN)).toBe("ok");
@@ -70,13 +70,13 @@ describe("checkBearerHeader", () => {
 
   it("handles array-valued header (first entry wins)", () => {
     // Express types `req.headers.authorization` as string | string[].
-    // Pick the first entry — mirrors Express's own behaviour.
+    // Pick the first entry - mirrors Express's own behaviour.
     expect(checkBearerHeader([`Bearer ${TOKEN}`, "garbage"], TOKEN)).toBe("ok");
     expect(checkBearerHeader([], TOKEN)).toBe("missing");
   });
 
   it("returns 'invalid' for both prefix-wrong and suffix-wrong same-length tokens", () => {
-    // Pass-8 review: this is NOT a timing-safe wall-clock test — we
+    // This is NOT a timing-safe wall-clock test - we
     // can't assert that from userspace JS. It pins the contract that
     // BOTH error positions resolve to the same verdict, which is the
     // visible surface of timing-safe equality (no early-out on the

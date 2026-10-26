@@ -1,10 +1,10 @@
 {
   "manifest_version": "0.2",
   "name": "action1-mcp-server",
-  "display_name": "Action1 RMM",
-  "version": "0.5.0",
-  "description": "Drive your Action1 RMM fleet from Claude. 100% Action1 API coverage with safe defaults: every destructive call defaults to a dry-run preview and requires explicit confirmation.",
-  "long_description": "Hybrid MCP server that wraps the Action1 RMM REST API: 33 hand-curated tools for the common workflows (run PowerShell on Windows, Bash on macOS, deploy updates, reboot endpoints, watch automations to completion) including 6 high-level workflow wrappers (CVE remediation plan, audit log search, software inventory, etc.), plus 133 auto-generated verb-first tools that mirror every operation in the official Action1 OpenAPI spec — 166 tools total. Uses OAuth2 client credentials, automatic token refresh, retry-with-backoff for transient errors (including network resets), and a three-layer destructive guard (env switch + per-call confirm + dry-run-by-default) so the LLM cannot accidentally mutate production state.",
+  "display_name": "Action1 MCP (Community)",
+  "version": "0.6.0",
+  "description": "Unofficial community connector for the Action1 RMM API, not affiliated with or endorsed by Action1. Query your fleet from Claude; destructive calls are off by default and preview first.",
+  "long_description": "Unofficial community project, not affiliated with, endorsed by or supported by Action1 Corporation. \"Action1\" is a trademark of Action1 Corporation.\n\nMCP server for the Action1 RMM REST API. Hand-curated tools cover the common workflows (run PowerShell on Windows and Bash on macOS, deploy updates, reboot endpoints, follow automations to completion, CVE remediation plans, audit log search, software inventory); generated tools cover every other operation of the pinned Action1 OpenAPI spec.\n\nSafety: tools that change state are refused unless 'Allow destructive operations' is enabled, and even then every call is a dry-run preview unless it passes dry_run:false and confirm:\"YES\". The model sets those two arguments itself, so keep your host's per-tool approval on for destructive tools. Account operations (users, roles, organizations, enterprise) stay disabled in this bundle. Tool results, including endpoint, user and inventory data, are sent to your AI provider as part of the conversation.",
   "author": {
     "name": "mguttmann"
   },
@@ -41,11 +41,16 @@
       }
     }
   },
+  "compatibility": {
+    "runtimes": {
+      "node": ">=22.12"
+    }
+  },
   "user_config": {
     "action1_base_url": {
       "type": "string",
       "title": "Action1 API base URL",
-      "description": "Region-specific endpoint, e.g. https://app.eu.action1.com/api/3.0 or https://app.action1.com/api/3.0 (US).",
+      "description": "Your Action1 region: https://app.eu.action1.com/api/3.0 (Europe), https://app.action1.com/api/3.0 (North America), https://app.na-2.action1.com/api/3.0 (North America 2), https://app.uk.action1.com/api/3.0 (United Kingdom) or https://app.au.action1.com/api/3.0 (Australia).",
       "required": true,
       "default": "https://app.eu.action1.com/api/3.0"
     },
@@ -59,7 +64,7 @@
     "action1_client_id": {
       "type": "string",
       "title": "API client ID",
-      "description": "Issued in Action1 console → Settings → API Credentials. Looks like api-key-...@action1.com.",
+      "description": "Issued in the Action1 console under Settings > API Credentials. Looks like api-key-...@action1.com.",
       "required": true,
       "sensitive": true
     },
@@ -71,13 +76,13 @@
       "sensitive": true
     },
     "allow_destructive": {
-      "type": "string",
+      "type": "boolean",
       "title": "Allow destructive operations",
-      "description": "Set to 'true' to permit destructive tools (run scripts, deploy updates, reboot, uninstall) to actually execute. Even when true, every call still requires per-call confirm:\"YES\" and dry_run:false. Default 'false' for query-only safety.",
+      "description": "Check to permit destructive tools (run scripts, deploy updates, reboot, uninstall) to actually execute. Even then, every call still requires per-call confirm:\"YES\" and dry_run:false. Off by default for query-only safety.",
       "required": false,
-      "default": "false"
+      "default": false
     }
   },
   "tools_generated": true,
-  "prompts_generated": false
+  "prompts_generated": true
 }

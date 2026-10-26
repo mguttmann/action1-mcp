@@ -1,19 +1,11 @@
 import { inspect } from "node:util";
+import { currentRequestContext } from "./requestContext.js";
 
 export type LogLevel =
-  | "debug"
-  | "info"
-  | "notice"
-  | "warning"
-  | "warn"
-  | "error"
-  | "critical"
-  | "alert"
-  | "emergency";
+  "debug" | "info" | "notice" | "warning" | "warn" | "error" | "critical" | "alert" | "emergency";
 
-// Maps the syslog levels the MCP spec uses to a coarser internal rank.
-// Multiple labels collapse to the same rank so MCP `logging/setLevel`
-// requests with values like "warning" or "notice" still work.
+// Maps the syslog level names (as used by MCP) to an internal rank.
+// "warn" and "warning" share a rank, so ACTION1_LOG_LEVEL accepts both.
 const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
@@ -26,11 +18,11 @@ const LEVEL_RANK: Record<LogLevel, number> = {
   emergency: 70,
 };
 
-const DEFAULT_LEVEL = (process.env.ACTION1_LOG_LEVEL ?? "info").toLowerCase() as LogLevel;
+const DEFAULT_LEVEL = (process.env.ACTION1_LOG_LEVEL ?? "info").trim().toLowerCase() as LogLevel;
 let currentLevel: LogLevel = LEVEL_RANK[DEFAULT_LEVEL] !== undefined ? DEFAULT_LEVEL : "info";
 
 export function setLogLevel(level: LogLevel): void {
-  // future SDK enum-loosening tolerates unknown levels gracefully —
+  // future SDK enum-loosening tolerates unknown levels gracefully -
   // an unknown value is logged as a warning and silently ignored
   // instead of crashing the request handler that called us.
   if (LEVEL_RANK[level] === undefined) {
@@ -45,15 +37,13 @@ export function getLogLevel(): LogLevel {
 }
 
 const REDACT_VALUE_PATTERNS: RegExp[] = [
-  // Pass-4 Security Audit #2.4: extended to RFC-6750 token68 charset
-  // (`~` and `*` added). Action1 tokens are base64url today so the
-  // extras are theoretical, but the stricter pattern blocks future
-  // upstream rotation to a charset that the old regex would clip on
-  // and silently leak the suffix.
+  // Full RFC-6750 token68 charset (including `~` and `*`). Action1
+  // tokens are base64url today, but a narrower class would stop at an
+  // unexpected character and leak the rest of the token.
   /Bearer\s+[A-Za-z0-9._~*\-+/=]+/gi,
   /api-key-[A-Za-z0-9.@_\-+/]+/gi,
   /\bsk-[A-Za-z0-9_\-]{16,}\b/g,
-  // Bare JWT (header.payload.signature) — caught even when the leading
+  // Bare JWT (header.payload.signature) - caught even when the leading
   // "Bearer " prefix is missing, e.g. when an Action1 error body
   // includes a token verbatim or when a refresh-token shows up in a
   // non-standard field. Pattern: 3 base64url chunks separated by dots,
@@ -65,12 +55,12 @@ const REDACT_VALUE_PATTERNS: RegExp[] = [
   // JSON or form-encoded credential key/value pairs that an upstream
   // OAuth-server might echo verbatim into a 4xx response body. Catches
   // e.g. `"client_secret":"32hex"`, `client_secret=32hex`,
-  // `"refresh_token": "..."` and similar. Defence-in-Depth — RFC 6749
+  // `"refresh_token": "..."` and similar. Defence-in-Depth - RFC 6749
   // forbids servers from returning the secret, but the redactor MUST
   // assume that an upstream might do so anyway.
   /(["']?(?:client_secret|refresh_token|access_token|api_key|password)["']?\s*[:=]\s*["']?)[^"',&\s}]+/gi,
   // Cookie / Set-Cookie / x-action1-token header-shapes. Header values
-  // are session-bearing — a leak here is as bad as a Bearer-token leak.
+  // are session-bearing - a leak here is as bad as a Bearer-token leak.
   // The capture group preserves the field name for debug-readability;
   // the value (until terminator chars) is replaced with [REDACTED].
   /(["']?(?:cookie|set-cookie|x-action1-token)["']?\s*[:=]\s*["']?)[^"',\n\r}]+/gi,
@@ -79,8 +69,8 @@ const REDACT_VALUE_PATTERNS: RegExp[] = [
 // Key-pattern order matters. The more-specific token patterns
 // (`access[_-]?token`, `refresh[_-]?token`, `id[_-]?token`) MUST be
 // checked before the bare `^token$` pattern so a key named
-// `access_token` is matched on its specific pattern — which is the
-// intent — and not silently degraded into a generic "bare token"
+// `access_token` is matched on its specific pattern - which is the
+// intent - and not silently degraded into a generic "bare token"
 // match. The bare-token catch is the last resort for raw `token`
 // fields that some upstream servers emit verbatim.
 const REDACT_KEY_PATTERNS: RegExp[] = [
@@ -151,12 +141,53 @@ export function redact(input: unknown, depth = 0, visited?: WeakSet<object>): un
   return inspect(input, { depth: 1 });
 }
 
+/**
+ * Mask the values of credential-shaped keys (the same key patterns as
+ * `redact`) at any depth, without touching other values: used on
+ * successful tool results and resource reads, where `redact`'s depth
+ * cut-off and free-text patterns would damage legitimate data. Strings
+ * (script output) are returned unchanged.
+ */
+export function redactSecretKeys(input: unknown, depth = 0): unknown {
+  if (input === null || typeof input !== "object" || depth > 256) return input;
+  if (Array.isArray(input)) return input.map((v) => redactSecretKeys(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    out[k] =
+      shouldRedactKey(k) && v !== null && v !== undefined
+        ? REDACTED
+        : redactSecretKeys(v, depth + 1);
+  }
+  return out;
+}
+
+/**
+ * Redaction for the dry-run preview of a mutating call: the person who
+ * confirms must see every value that will be sent, so unlike `redact`
+ * there is no depth cut-off at 6 (deploy bodies nest update filters at
+ * actions[].params.filters[].values[]). Credential-shaped keys are
+ * masked as in `redactSecretKeys`, and strings go through the
+ * free-text patterns of `redactString` (a Bearer token in a script).
+ */
+export function redactPreview(input: unknown, depth = 0): unknown {
+  if (depth > 256) return "[truncated]";
+  if (typeof input === "string") return redactString(input);
+  if (input === null || typeof input !== "object") return input;
+  if (Array.isArray(input)) return input.map((v) => redactPreview(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    out[k] =
+      shouldRedactKey(k) && v !== null && v !== undefined ? REDACTED : redactPreview(v, depth + 1);
+  }
+  return out;
+}
+
 export function redactString(s: string): string {
   let out = s;
   for (const re of REDACT_VALUE_PATTERNS) {
     // When the regex captured a prefix (group 1, e.g.
     // `"client_secret":"`), keep it in the output and replace only
-    // the value — that preserves the field name for debug-readability
+    // the value - that preserves the field name for debug-readability
     // while removing the secret. Patterns without a capture group
     // fall back to a full-match replace.
     out = out.replace(re, (_match, prefix?: string) =>
@@ -184,7 +215,9 @@ const META_HARD_CAP_BYTES = 4 * 1024;
 // can produce thousands of log lines per minute; once we exceed the
 // budget we sample down to ~10% and emit a single
 // `logger_throttled` summary per sample window so observers know
-// they're seeing a subset.
+// they're seeing a subset. Only debug and info entries are counted and
+// sampled: notice and above (audit events such as
+// destructive_executed, warnings, errors) are always written.
 const THROTTLE_LIMIT_PER_MINUTE = 1000;
 const THROTTLE_WINDOW_MS = 60_000;
 const THROTTLE_SAMPLE_DIVISOR = 10;
@@ -229,7 +262,7 @@ function shouldEmitUnderThrottle(now: number): { emit: boolean; flushSummary: bo
   if (throttle.count <= THROTTLE_LIMIT_PER_MINUTE) {
     return { emit: true, flushSummary: false };
   }
-  // Past the limit — sample at 1/N. Use the running count as the
+  // Past the limit - sample at 1/N. Use the running count as the
   // sampling key so the cadence is deterministic (no Math.random
   // here, the test would be flaky).
   const sampled = throttle.count % THROTTLE_SAMPLE_DIVISOR === 0;
@@ -251,11 +284,17 @@ function writeLine(record: Record<string, unknown>): void {
   }
 }
 
-function emit(level: LogLevel, msg: string, meta?: Record<string, unknown>): void {
-  if (LEVEL_RANK[level] < LEVEL_RANK[currentLevel]) return;
+/** Levels below this rank are subject to the throttle. */
+const THROTTLED_BELOW_RANK = LEVEL_RANK.notice;
+
+function emit(level: LogLevel, msg: string, meta?: Record<string, unknown>, always = false): void {
+  if (!always && LEVEL_RANK[level] < LEVEL_RANK[currentLevel]) return;
 
   const now = Date.now();
-  const decision = shouldEmitUnderThrottle(now);
+  const decision =
+    !always && LEVEL_RANK[level] < THROTTLED_BELOW_RANK
+      ? shouldEmitUnderThrottle(now)
+      : { emit: true, flushSummary: false };
   if (!decision.emit) return;
 
   if (decision.flushSummary) {
@@ -278,8 +317,29 @@ function emit(level: LogLevel, msg: string, meta?: Record<string, unknown>): voi
     level,
     msg: redactString(msg),
   };
+  // Correlation id: every line written while a tool call runs carries
+  // the id of that call, so its tool_call event, retries and guard
+  // decisions can be joined.
+  const ctx = currentRequestContext();
+  if (ctx) record.request_id = ctx.requestId;
   if (meta) record.meta = truncateMetaIfHuge(redact(meta) as Record<string, unknown>);
   writeLine(record);
+}
+
+/**
+ * Write a `critical` JSON line for an error that is about to end the
+ * process. Bypasses the level filter and the throttle, so the last line
+ * of a crashed process is always a parseable record.
+ */
+export function logFatal(msg: string, err: unknown): void {
+  writeLine({
+    ts: new Date().toISOString(),
+    level: "critical",
+    msg: redactString(msg),
+    meta: {
+      error: redact(err instanceof Error ? err : { message: String(err) }),
+    },
+  });
 }
 
 /**
@@ -308,4 +368,11 @@ export const log = {
   warning: (msg: string, meta?: Record<string, unknown>) => emit("warning", msg, meta),
   error: (msg: string, meta?: Record<string, unknown>) => emit("error", msg, meta),
   critical: (msg: string, meta?: Record<string, unknown>) => emit("critical", msg, meta),
+  /**
+   * Audit event (destructive_refused, destructive_executed, HTTP
+   * rejections): written at level notice regardless of
+   * ACTION1_LOG_LEVEL and never throttled, so an operator cannot lose
+   * the audit trail by lowering the log volume.
+   */
+  audit: (msg: string, meta?: Record<string, unknown>) => emit("notice", msg, meta, true),
 };

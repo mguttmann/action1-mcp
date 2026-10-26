@@ -1,0 +1,32 @@
+action1-mcp-server
+Copyright (c) 2026 mguttmann
+
+This project is licensed under the MIT License (see LICENSE), with the
+exceptions below.
+
+Unofficial project
+------------------
+This is an unofficial, community-maintained project. It is not
+affiliated with, endorsed by, sponsored by or supported by Action1
+Corporation. Do not contact Action1 support about this software.
+
+Action1 API specification (not covered by the MIT License)
+----------------------------------------------------------
+src/codegen/spec/openapi.json is the Action1 API specification
+(OpenAPI 3.1). It is the property of Action1 Corporation and is subject
+to Action1's terms of use (https://www.action1.com/terms-of-use/). It
+is included unchanged, only for interoperability: the code generator
+reads it to build tools that call the Action1 REST API. It is NOT
+licensed under the MIT License of this project, and no rights in it are
+granted by this repository. Its provenance is documented in
+src/codegen/spec/SOURCE.md.
+
+Tool names, titles, descriptions and parameter descriptions in
+src/tools/generated/index.ts are derived from that specification.
+
+Trademarks
+----------
+"Action1" is a trademark or registered trademark of Action1
+Corporation. It is used here only to identify the API this software
+works with.
+All other trademarks are the property of their respective owners.

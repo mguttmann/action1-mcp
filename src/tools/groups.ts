@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { Action1Client } from "../client/action1Client.js";
 import { resolveOrgId } from "../config.js";
@@ -11,10 +11,7 @@ import {
   runTool,
 } from "./helpers.js";
 import { destructiveGuardShape, runDestructive } from "./destructiveGuard.js";
-import {
-  buildGroupContentsAdd,
-  buildGroupContentsRemove,
-} from "../payloads/groupContents.js";
+import { buildGroupContentsAdd, buildGroupContentsRemove } from "../payloads/groupContents.js";
 
 const DESTRUCTIVE_ANNOTATIONS = {
   readOnlyHint: false,
@@ -39,13 +36,13 @@ export function registerGroupTools(server: McpServer, client: Action1Client): vo
       title: "Add an endpoint to an endpoint group",
       description:
         "Add a single endpoint to an endpoint group. POSTs the spec array body [{method:POST,data:{endpoint_id,type}}] to /endpoints/groups/{org}/{group}/contents. Re-adding an existing member is a no-op.",
-      inputSchema: {
+      inputSchema: z.object({
         ...orgIdShape,
         ...destructiveGuardShape,
         ...formatShape,
         group_id: groupIdSchema,
         endpoint_id: endpointIdSchema,
-      },
+      }),
       outputSchema: okStatusOutputShape,
       annotations: DESTRUCTIVE_ANNOTATIONS,
     },
@@ -84,13 +81,13 @@ export function registerGroupTools(server: McpServer, client: Action1Client): vo
       title: "Remove an endpoint from an endpoint group",
       description:
         "Remove a single endpoint from an endpoint group. POSTs the spec array body [{method:DELETE,endpoint_id}] to /endpoints/groups/{org}/{group}/contents (there is no DELETE verb or /contents/{id} sub-path).",
-      inputSchema: {
+      inputSchema: z.object({
         ...orgIdShape,
         ...destructiveGuardShape,
         ...formatShape,
         group_id: groupIdSchema,
         endpoint_id: endpointIdSchema,
-      },
+      }),
       outputSchema: okStatusOutputShape,
       annotations: DESTRUCTIVE_ANNOTATIONS,
     },

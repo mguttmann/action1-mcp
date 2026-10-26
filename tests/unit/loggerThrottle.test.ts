@@ -6,7 +6,7 @@ import {
   setLogLevel,
 } from "../../src/utils/logger.js";
 
-// Finding 5.6 — bound stderr footprint for the logger.
+// Bound stderr footprint for the logger.
 // Two concerns:
 //   (a) per-entry meta caps so a 1 000-row dump can't bloat one
 //       record into the megabytes;
@@ -23,7 +23,7 @@ function captureStderr(): { restore: () => void; lines: string[] } {
     }
     return true;
   });
-  process.stderr.write = spy as unknown as typeof process.stderr.write;
+  process.stderr.write = spy;
   return {
     restore: () => {
       process.stderr.write = original;
@@ -32,7 +32,7 @@ function captureStderr(): { restore: () => void; lines: string[] } {
   };
 }
 
-describe("logger — meta-size cap (finding 5.6)", () => {
+describe("logger - meta-size cap", () => {
   let originalLevel: ReturnType<typeof getLogLevel>;
   beforeEach(() => {
     originalLevel = getLogLevel();
@@ -76,20 +76,20 @@ describe("logger — meta-size cap (finding 5.6)", () => {
   });
 });
 
-describe("logger — throughput throttle (finding 5.6)", () => {
+describe("logger - throughput throttle", () => {
   let originalLevel: ReturnType<typeof getLogLevel>;
   beforeEach(() => {
     originalLevel = getLogLevel();
     setLogLevel("debug");
     __resetLoggerThrottleForTests();
     // Freeze wall-clock so the throttle window never rolls forward
-    // during the test. Without fake timers the loop below — 2 000
-    // sequential log calls plus JSON.stringify on every record — can
+    // during the test. Without fake timers the loop below - 2 000
+    // sequential log calls plus JSON.stringify on every record - can
     // exceed 60 s on a slow CI runner, the 60 s sliding window rolls,
     // the second batch is treated as a fresh budget, and all 2 000
     // entries fly through (assertion `< 1_200` then fails).
     // logger.ts reads `Date.now()` directly (verified via
-    // grep — see `emit` and `shouldEmitUnderThrottle`), which
+    // grep - see `emit` and `shouldEmitUnderThrottle`), which
     // vi.useFakeTimers stubs by default, so freezing the system time
     // is sufficient.
     vi.useFakeTimers();
@@ -128,5 +128,39 @@ describe("logger — throughput throttle (finding 5.6)", () => {
     expect(summary.msg).toBe("logger_throttled");
     expect(summary.meta.limit_per_window).toBe(1_000);
     expect(summary.meta.sample_divisor).toBe(10);
+  });
+});
+
+describe("logger - throttle never drops notice, warn, error or critical", () => {
+  let originalLevel: ReturnType<typeof getLogLevel>;
+  beforeEach(() => {
+    originalLevel = getLogLevel();
+    setLogLevel("debug");
+    __resetLoggerThrottleForTests();
+  });
+  afterEach(() => {
+    setLogLevel(originalLevel);
+    __resetLoggerThrottleForTests();
+  });
+
+  it("writes every high-severity line while debug/info is being sampled", () => {
+    const cap = captureStderr();
+    try {
+      for (let i = 0; i < 1500; i++) log.debug("noise", { i });
+      for (let i = 0; i < 50; i++) {
+        log.notice("audit_event", { i });
+        log.warn("warn_event", { i });
+        log.error("error_event", { i });
+        log.critical("critical_event", { i });
+      }
+    } finally {
+      cap.restore();
+    }
+    const msgs = cap.lines.map((l) => (JSON.parse(l) as { msg: string }).msg);
+    for (const m of ["audit_event", "warn_event", "error_event", "critical_event"]) {
+      expect(msgs.filter((x) => x === m)).toHaveLength(50);
+    }
+    // The low-severity flood is still sampled.
+    expect(msgs.filter((x) => x === "noise").length).toBeLessThan(1500);
   });
 });

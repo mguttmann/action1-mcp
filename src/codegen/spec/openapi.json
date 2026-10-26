@@ -12,12 +12,20 @@
   },
   "servers": [
     {
-      "url": "API",
-      "description": "Global: North America"
+      "url": "https://app.action1.com/api/3.0",
+      "description": "North America"
+    },
+    {
+      "url": "https://app.na-2.action1.com/api/3.0",
+      "description": "North America 2"
     },
     {
       "url": "https://app.eu.action1.com/api/3.0",
       "description": "Europe"
+    },
+    {
+      "url": "https://app.uk.action1.com/api/3.0",
+      "description": "United Kingdom"
     },
     {
       "url": "https://app.au.action1.com/api/3.0",
@@ -236,6 +244,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -283,6 +294,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -329,6 +343,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -365,6 +382,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -415,6 +435,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -474,6 +497,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -524,6 +550,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -577,6 +606,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -586,7 +618,7 @@
         "operationId": "endpoints_managed",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/limit"
@@ -642,6 +674,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -651,7 +686,7 @@
         "operationId": "endpoints_managed_endpointId",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/endpointId"
@@ -681,6 +716,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -760,6 +798,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -790,6 +831,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -849,6 +893,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -858,7 +905,7 @@
         "operationId": "endpoints_managed_endpointId_missing_updates",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/endpointId"
@@ -928,6 +975,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -988,6 +1038,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1049,6 +1102,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1088,6 +1144,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1144,6 +1203,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1174,6 +1236,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1257,6 +1322,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1304,6 +1372,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1366,6 +1437,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1408,6 +1482,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1467,6 +1544,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1503,6 +1583,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1546,6 +1629,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1615,6 +1701,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1665,6 +1754,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1704,6 +1796,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1734,6 +1829,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1782,6 +1880,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1833,6 +1934,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1869,6 +1973,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1912,6 +2019,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -1939,6 +2049,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -1990,6 +2103,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2033,6 +2149,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2073,6 +2192,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2120,6 +2242,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2147,6 +2272,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2195,6 +2323,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2231,6 +2362,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2291,6 +2425,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2362,6 +2499,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2398,6 +2538,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2473,6 +2616,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2500,6 +2646,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2550,6 +2699,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2593,6 +2745,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2663,6 +2818,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2724,6 +2882,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -2751,6 +2912,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2833,6 +2997,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2896,6 +3063,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2946,6 +3116,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -2981,6 +3154,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3050,6 +3226,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3093,6 +3272,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3171,6 +3353,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -3215,6 +3400,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3257,6 +3445,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -3307,6 +3498,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -3337,6 +3531,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3376,6 +3573,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3439,6 +3639,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3488,6 +3691,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -3541,6 +3747,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -3571,6 +3780,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3609,6 +3821,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3652,6 +3867,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3698,6 +3916,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3775,6 +3996,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           },
           "500": {
             "$ref": "#/components/responses/500"
@@ -3859,6 +4083,9 @@
           "403": {
             "$ref": "#/components/responses/403"
           },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
           "500": {
             "description": "Server error.\n\n<br>\n\nIf client receives any 5xx errors upon sending of any upload chunks, it needs to resume the interrupted upload using the following PUT request with empty payload:\n\n```\nPUT /API/software-repository/{orgId}/{package-id}/{version-id}/upload?platform=Windows_32&upload_id=:UPLOAD_ID HTTP/1.1\nContent-Length: 0\nContent-Range: bytes */2000000\t\t# this requests the current status from the server\n```\n\nThe server responds with this:\n\n```\nHTTP/1.1 308 Resume Incomplete\nContent-Length: 0\nRange: bytes=0-199000\t\t\t# this indicates that the first 200000 bytes were transferred\n```\nThe client can then proceed from the starting position 200000 indicated by the server in the above example using PUT requests.\n\n<br>\n\n**Note:** the client should use an exponential backoff strategy if any server errors are returned when resuming or retrying upload requests. \nThese errors can occur if a server is getting overloaded. Exponential backoff can help alleviate these kinds of problems when there is a high volume of requests or heavy network traffic. \nThe only exception is error 404 (File Not Found), which means that the upload session has expired and the upload needs to be reinitiated from scratch to obtain a new upload ID.\n",
             "$ref": "#/components/responses/500"
@@ -3871,7 +4098,7 @@
         "operationId": "updates_orgId_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/filter"
@@ -3956,6 +4183,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -3965,7 +4195,7 @@
         "operationId": "updates_orgId_packageId_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/packageId"
@@ -4047,6 +4277,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4056,7 +4289,7 @@
         "operationId": "updates_orgId_packageId_versions_versionId_endpoints_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/packageId"
@@ -4113,6 +4346,92 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          }
+        }
+      }
+    },
+    "/updates/{orgId}/approvals": {
+      "post": {
+        "operationId": "updates_orgId_approvals",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgIdOrAll"
+          }
+        ],
+        "tags": [
+          "Software Deployment. Updates (Patches)"
+        ],
+        "summary": "TBD:Manage updates approvals",
+        "description": "**Requires one of the following permissions: `approve_updates`**\n\nManages approval status for multiple packages in bulk.\n\n- Accepts a list of status changes, each with a target `approval_status` and a list of affected packages.\n- If a package has organization scope only and `{orgId}` is `all`, the approval status will be updated only for the organization the package belongs to.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "approval_status": {
+                      "type": "string",
+                      "enum": [
+                        "New",
+                        "Approved",
+                        "Declined"
+                      ],
+                      "example": "Approved"
+                    },
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApprovalPackage"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Success"
+                    },
+                    {
+                      "properties": {
+                        "details": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ApprovalPackage"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4176,6 +4495,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4205,6 +4527,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4265,6 +4590,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4328,6 +4656,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4360,6 +4691,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4403,6 +4737,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4439,6 +4776,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4499,6 +4839,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -4572,6 +4915,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4611,6 +4957,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -4687,6 +5036,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -4717,6 +5069,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4771,6 +5126,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4813,6 +5171,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -4890,6 +5251,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -4970,6 +5334,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5009,6 +5376,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5074,6 +5444,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5127,6 +5500,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5159,6 +5535,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5218,6 +5597,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5249,6 +5631,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5283,6 +5668,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5317,6 +5705,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5357,6 +5748,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5399,6 +5793,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5435,6 +5832,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5494,6 +5894,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -5542,6 +5945,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5578,6 +5984,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -5626,6 +6035,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -5653,6 +6065,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5684,6 +6099,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5743,6 +6161,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5775,6 +6196,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -5805,6 +6229,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5861,6 +6288,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5892,6 +6322,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -5930,6 +6363,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -5971,6 +6407,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6012,6 +6451,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6057,6 +6499,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6084,6 +6529,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6134,6 +6582,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6181,6 +6632,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6226,6 +6680,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6253,6 +6710,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6310,6 +6770,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6386,6 +6849,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6422,6 +6888,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6476,6 +6945,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6503,6 +6975,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6556,6 +7031,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6565,7 +7043,7 @@
         "operationId": "vulnerabilities_orgId_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/published_date_start"
@@ -6643,6 +7121,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6652,7 +7133,7 @@
         "operationId": "vulnerabilities_orgId_cve_id_endpoints_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/orgId"
+            "$ref": "#/components/parameters/orgIdOrAll"
           },
           {
             "$ref": "#/components/parameters/cveId"
@@ -6709,6 +7190,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6748,6 +7232,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6784,6 +7271,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6846,6 +7336,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6893,6 +7386,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -6944,6 +7440,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       },
@@ -6977,6 +7476,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -7045,6 +7547,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -7098,6 +7603,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -7140,6 +7648,9 @@
           },
           "403": {
             "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
           }
         }
       }
@@ -7580,6 +8091,284 @@
             "enum": [
               "Yes",
               "No"
+            ]
+          },
+          "cve_origin": {
+            "type": "array",
+            "description": "Indicates the source of information about this vulnerability, such as NVD (National Vulnerability Database), NVD++ (VulnCheck NVD++), MSRC (Microsoft Security Response Center), or Office (for Office vulnerabilities).",
+            "items": {
+              "$ref": "#/components/schemas/CveOriginExtended"
+            }
+          },
+          "attack_requirements": {
+            "type": "string",
+            "description": "An assessment of the prerequisite deployment and execution conditions of the vulnerable system that must be present for an attacker to successfully exploit this vulnerability. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "None",
+              "Present"
+            ]
+          },
+          "vulnerable_system_confidentiality_impact": {
+            "type": "string",
+            "description": "An assessment of the impact to the confidentiality of the information resources managed by the vulnerable system due to a successfully exploited vulnerability. Note: Applicable to CVSS 4.0. Assesses impacts to a vulnerable system affected by the vulnerability.",
+            "enum": [
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "vulnerable_system_integrity_impact": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker can modify, alter, or tamper with critical information or system components, leading to data corruption, unauthorized modifications, or system instability. Note: Applicable to CVSS 4.0. Assesses impacts to a vulnerable system affected by the vulnerability.",
+            "enum": [
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "vulnerable_system_availability_impact": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker could disrupt or degrade the normal functioning of a system, resulting in service unavailability or downtime. Note: Applicable to CVSS 4.0. Assesses impacts to a vulnerable system affected by the vulnerability.",
+            "enum": [
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "subsequent_system_confidentiality_impact": {
+            "type": "string",
+            "description": "An assessment of the impact to the confidentiality of the information resources managed by the subsequent system due to a successfully exploited vulnerability. Note: Applicable to CVSS 4.0. Assesses impacts to a subsequent system affected by the vulnerability.",
+            "enum": [
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "subsequent_system_integrity_impact": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker can modify, alter, or tamper with critical information or system components, leading to data corruption, unauthorized modifications, or system instability. Note: Applicable to CVSS 4.0. Assesses impacts to a subsequent system affected by the vulnerability.",
+            "enum": [
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "subsequent_system_availability_impact": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker could disrupt or degrade the normal functioning of a system, resulting in service unavailability or downtime. Note: Applicable to CVSS 4.0. Assesses impacts to a subsequent system affected by the vulnerability.",
+            "enum": [
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "exploit_maturity": {
+            "type": "string",
+            "description": "An assessment of the likelihood of a vulnerability being exploited, based on the current state of exploit techniques, the availability of exploit code, and evidence of active exploitation in the wild. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Attacked",
+              "Proof-of-Concept",
+              "Unreported"
+            ]
+          },
+          "confidentiality_requirement": {
+            "type": "string",
+            "description": "This metric enables the consumer analyst to customize the resulting score depending on the importance of the affected IT asset to a user's organization, measured in terms of complementary/alternative security controls in place and confidentiality. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Medium",
+              "Low"
+            ]
+          },
+          "integrity_requirement": {
+            "type": "string",
+            "description": "This metric enables the consumer analyst to customize the resulting score depending on the importance of the affected IT asset to a user's organization, measured in terms of complementary/alternative security controls in place and integrity. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Medium",
+              "Low"
+            ]
+          },
+          "availability_requirement": {
+            "type": "string",
+            "description": "This metric enables the consumer analyst to customize the resulting score depending on the importance of the affected IT asset to a user's organization, measured in terms of complementary/alternative security controls in place and availability. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Medium",
+              "Low"
+            ]
+          },
+          "modified_attack_vector": {
+            "type": "string",
+            "description": "An assessment of the path or means through which an attacker could exploit this vulnerability. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Network",
+              "Adjacent",
+              "Local",
+              "Physical"
+            ]
+          },
+          "modified_attack_complexity": {
+            "type": "string",
+            "description": "An assessment of the actions an attacker must take to actively evade or circumvent existing built-in security-enhancing conditions in order to obtain a working exploit. This metric enables the consumer analyst to override the corresponding base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS v4.0.",
+            "enum": [
+              "Not Defined",
+              "Low",
+              "High"
+            ]
+          },
+          "modified_attack_requirements": {
+            "type": "string",
+            "description": "An assessment of the prerequisite deployment and execution conditions of the vulnerable system that must be present for an attacker to successfully exploit this vulnerability. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "None",
+              "Present"
+            ]
+          },
+          "modified_privileges_required": {
+            "type": "string",
+            "description": "An assessment of the level of privileges or access an attacker needs to exploit this vulnerability. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "None",
+              "Low",
+              "High"
+            ]
+          },
+          "modified_user_interaction": {
+            "type": "string",
+            "description": "An assessment of whether the vulnerability can be exploited solely by the attacker or if a separate user (other than the attacker) needs to participate in some manner to compromise the vulnerable component. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "None",
+              "Passive",
+              "Active"
+            ]
+          },
+          "modified_vulnerable_system_confidentiality": {
+            "type": "string",
+            "description": "An assessment of the impact to the confidentiality of the information resources managed by a software component. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0. Assesses impacts to the vulnerable system.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "modified_vulnerable_system_integrity": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker can modify, alter, or tamper with critical information or system components, leading to data corruption, unauthorized modifications, or system instability. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0. Assesses impacts to the vulnerable system.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "modified_vulnerable_system_availability": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker could disrupt or degrade the normal functioning of a system, resulting in service unavailability or downtime. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0. Assesses impacts to the vulnerable system.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Low",
+              "None"
+            ]
+          },
+          "modified_subsequent_system_confidentiality": {
+            "type": "string",
+            "description": "An assessment of the impact to the confidentiality of the information resources managed by a software component. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0. Assesses impacts to a subsequent system affected by the vulnerability.",
+            "enum": [
+              "Not Defined",
+              "High",
+              "Low",
+              "Negligible"
+            ]
+          },
+          "modified_subsequent_system_integrity": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker can modify, alter, or tamper with critical information or system components, leading to data corruption, unauthorized modifications, or system instability. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0. Assesses impacts to a subsequent system affected by the vulnerability.",
+            "enum": [
+              "Not Defined",
+              "Safety",
+              "High",
+              "Low",
+              "Negligible"
+            ]
+          },
+          "modified_subsequent_system_availability": {
+            "type": "string",
+            "description": "An assessment of the extent to which an attacker could disrupt or degrade the normal functioning of a system, resulting in service unavailability or downtime. This metric enables the consumer analyst to override individual base metric value based on specific characteristics of a user's environment. Note: Applicable to CVSS 4.0. Assesses impacts to a subsequent system affected by the vulnerability.",
+            "enum": [
+              "Not Defined",
+              "Safety",
+              "High",
+              "Low",
+              "Negligible"
+            ]
+          },
+          "safety": {
+            "type": "string",
+            "description": "An assessment of the degree of impact to the safety of a human actor or participant who could be predictably harmed as a result of the vulnerability being exploited. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Present",
+              "Negligible"
+            ]
+          },
+          "automatable": {
+            "type": "string",
+            "description": "An assessment of whether exploitation of a vulnerability can be automated across multiple targets, based on the feasibility of automating the reconnaissance, weaponization, delivery, and exploitation phases of the attack. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "No",
+              "Yes"
+            ]
+          },
+          "recovery": {
+            "type": "string",
+            "description": "An assessment of the resilience of a system to restore services, in terms of performance and availability, after an attack has been performed. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Automatic",
+              "User",
+              "Irrecoverable"
+            ]
+          },
+          "value_density": {
+            "type": "string",
+            "description": "An assessment of the concentration of resources an attacker gains control over from a single successful exploitation event. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Diffuse",
+              "Concentrated"
+            ]
+          },
+          "vulnerability_response_effort": {
+            "type": "string",
+            "description": "An assessment of the effort required for consumers to implement an initial response to a vulnerability in deployed products and services, considering the difficulty of applying the quickest available mitigation or remediation. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Low",
+              "Moderate",
+              "High"
+            ]
+          },
+          "provider_urgency": {
+            "type": "string",
+            "description": "An assessment of the urgency assigned by the vulnerability provider or vendor, reflecting their recommended prioritization for remediation based on internal evaluation or advisory guidance. Note: Applicable to CVSS 4.0.",
+            "enum": [
+              "Not Defined",
+              "Red",
+              "Amber",
+              "Green",
+              "Clear"
             ]
           }
         }
@@ -8402,6 +9191,17 @@
                 }
               }
             }
+          },
+          "organization_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IDs of organizations missing the specified update.",
+            "example": [
+              "9844e782-2506-7488-f599-a5693ce52107",
+              "00000000-0000-0000-0000-000000000000"
+            ]
           }
         }
       },
@@ -8882,6 +9682,19 @@
             "type": "string",
             "description": "Company name",
             "example": "Action1"
+          }
+        }
+      },
+      "ApprovalPackage": {
+        "type": "object",
+        "properties": {
+          "packages_id": {
+            "type": "string",
+            "example": "The_Git_Development_Community_Git_1693310149374_builtin"
+          },
+          "version_id": {
+            "type": "string",
+            "example": "2.51.0.2_1759192980389"
           }
         }
       },
@@ -12625,14 +13438,9 @@
             },
             "cve_origin": {
               "type": "array",
-              "description": "Indicates the source of information about this vulnerability, such as NVD (National Vulnerability Database), MSRC (Microsoft Security Response Center), or Microsoft 365 (for Office vulnerabilities).",
+              "description": "Indicates the source of information about this vulnerability, such as NVD (National Vulnerability Database), NVD++ (VulnCheck NVD++), MSRC (Microsoft Security Response Center), or Office (for Office vulnerabilities).",
               "items": {
-                "type": "string",
-                "enum": [
-                  "NVD",
-                  "MSRC",
-                  "Microsoft365"
-                ]
+                "$ref": "#/components/schemas/CveOrigin"
               }
             }
           }
@@ -12690,9 +13498,49 @@
           }
         }
       },
+      "CveOrigin": {
+        "title": "Cve Origin",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "NVD",
+              "NVD++",
+              "MSRC",
+              "Office"
+            ]
+          }
+        }
+      },
+      "CveOriginExtended": {
+        "title": "Cve Origin Extended",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CveOrigin"
+          },
+          {
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
       "OSMac": {
         "type": "string",
         "enum": [
+          "macOS Golden Gate",
+          "macOS Tahoe",
           "macOS Sequoia",
           "macOS Sonoma",
           "macOS Ventura",
@@ -13810,6 +14658,40 @@
                   "status": 403,
                   "developer_message": "Access is denied",
                   "user_message": "Access is denied"
+                }
+              }
+            }
+          }
+        }
+      },
+      "429": {
+        "description": "Too many requests.",
+        "headers": {
+          "Retry-After": {
+            "description": "Number of seconds to wait before retrying the request.",
+            "schema": {
+              "type": "integer"
+            },
+            "example": 30
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "too_many_requests_error": {
+                "summary": "Too Many Requests Error",
+                "value": {
+                  "id": "0",
+                  "type": "Error",
+                  "status": 429,
+                  "developer_message": "Request rate limit exceeded. Please try again in 30 seconds.",
+                  "user_message": "Request rate limit exceeded. Please try again in 30 seconds.",
+                  "details": {
+                    "retry_after": 30
+                  }
                 }
               }
             }

@@ -1,287 +1,439 @@
 # Security Guide
 
-`action1-mcp` is a privileged tool — it can run arbitrary PowerShell or Bash
-on every Windows / macOS endpoint Action1 manages, deploy software,
-uninstall, and reboot machines. Treat it as you would treat console access
-to your fleet.
+`action1-mcp` is a privileged tool. With a suitable Action1 role it can run
+arbitrary PowerShell or Bash on every Windows and macOS endpoint Action1
+manages, deploy and uninstall software, reboot machines, and change users,
+roles and organizations. Treat it like console access to your fleet.
 
-## Threat model
+This is an unofficial project, not affiliated with Action1.
 
-| Adversary | Concern | Mitigation |
-|---|---|---|
-| Malicious or buggy LLM | Unintended destructive call | **Three-layer destructive guard**: env switch + per-call confirm + dry_run default. |
-| Network attacker on the LAN | Read or hijack the HTTP transport | TLS upstream + `MCP_HTTP_TOKEN` bearer auth + bind to loopback when proxied. |
-| Supply-chain compromise of a dependency | Token / payload theft | Stderr logger redacts tokens; minimal dependency set; pin the OpenAPI spec SHA. |
-| Operator misconfiguration | Public binding without auth | Server refuses to start on a non-loopback bind without `MCP_HTTP_TOKEN`; production checklist in `DEPLOYMENT.md`. |
-| Insider with repo access | Read committed credentials | `.env` is git-ignored; pre-commit secret scan in `CONTRIBUTING.md`. |
+## Supported versions
 
-## Destructive guard
+| Version | Security fixes |
+|---|---|
+| 0.6.x | yes |
+| < 0.6 | no, please upgrade |
 
-Every tool flagged `destructiveHint: true` (curated and auto-generated alike)
-enforces three independent gates:
-
-```
-ACTION1_ALLOW_DESTRUCTIVE=true   ← server env, restart-required
-        AND
-confirm: "YES"                    ← exact, case-sensitive
-        AND
-dry_run: false                    ← default is true → preview-only
-```
-
-The default `dry_run: true` returns a JSON preview of the exact `{method,
-path, body}` that *would* be sent. Passing `dry_run: false` without
-`confirm: "YES"` is rejected with a clear hint. Passing both without
-`ACTION1_ALLOW_DESTRUCTIVE=true` is rejected at the env-switch layer.
-
-The env layer is a deliberate friction point: it requires either an SRE
-deciding "this deployment is allowed to mutate state" or an explicit
-operator action (`export ACTION1_ALLOW_DESTRUCTIVE=true`) per shell session.
-That makes accidental destruction in a query-only deployment impossible.
-
-### Auto-confirm mode (`ACTION1_DESTRUCTIVE_AUTO_CONFIRM=true`)
-
-For isolated **single-operator test setups** — a local Claude Desktop, a
-sandbox VM — having to type "with confirm YES and dry_run false"
-on every prompt becomes friction without a security benefit (the
-operator already controls the environment). Setting
-`ACTION1_DESTRUCTIVE_AUTO_CONFIRM=true` collapses the per-call layers:
-
-- `dry_run` defaults to `false` (was `true`).
-- `confirm: "YES"` is no longer required; missing confirm is treated as
-  "YES".
-- `ACTION1_ALLOW_DESTRUCTIVE=true` is **still required** as the master
-  switch.
-- Callers can still pass `dry_run: true` explicitly to force a preview.
-
-**Do not set this in shared, multi-tenant, or production deployments.**
-It removes two of the three guard layers; only the env switch remains.
-The startup logger emits an `auto_confirm_enabled` warning when this is
-on, so misconfiguration is visible in your log aggregator.
-
-## API credential management
-
-- The Action1 `client_id` + `client_secret` are issued in *Settings → API
-  Credentials* and **role-bound** to a specific Action1 role. Pick the
-  smallest role that covers what you need; the server cannot escalate beyond
-  the role.
-- Read-only deployments (e.g. an analyst asking Claude to summarise patch
-  status) only need `view_endpoints`, `view_automations`,
-  `view_installed_software`, `view_reports`. They do *not* need
-  `manage_endpoints`, `run_automations`, or `manage_*`.
-- Read-write deployments (e.g. an SRE driving patch deployments through
-  Claude) need `run_automations` and `manage_endpoints` *plus* the per-area
-  permissions for the templates they actually call.
-- **Never** issue a credential with the *Owner* role and pipe it through an
-  agent unless you understand exactly which tools that agent can invoke.
-- Rotate credentials on a fixed schedule (90 days is a reasonable default).
-  Action1 supports zero-downtime rotation — issue a new credential, update
-  the server's `.env`, restart, then revoke the old one.
-
-## HTTP transport hardening
-
-- **Always set `MCP_HTTP_TOKEN`** when binding to anything other than
-  `127.0.0.1` / `localhost` / `::1`. If you bind to a non-loopback host
-  without `MCP_HTTP_TOKEN` set, the server refuses to start with a clear
-  error message pointing at the missing env var.
-- `src/config.ts` enforces a minimum of 16 non-whitespace characters
-  for `MCP_HTTP_TOKEN` (short or whitespace-only tokens are
-  brute-forceable in seconds). 32 bytes (256 bit) of entropy remains
-  the recommended best practice — generate with `openssl rand -hex 32`.
-- Token comparison is constant-time (`node:crypto.timingSafeEqual`) to
-  prevent timing-based discovery.
-- Terminate TLS at a reverse proxy (Caddy, nginx, traefik, Cloudflare
-  Tunnel, AWS ALB). Do not run the Express server on a public port without
-  a TLS terminator in front.
-- `MCP_HTTP_ALLOWED_ORIGINS` is a CORS-style allowlist for browser
-  callers. Empty list (default) means *no Origin check applies* — useful
-  when only non-browser clients (Claude Code CLI, MCP Inspector) connect.
-  Set it explicitly when browser clients (Claude.ai web, Claude Desktop
-  custom connectors) are part of your topology.
-
-## Logging & redaction
-
-Stderr emits one JSON line per event. The redactor scrubs:
-
-- `Bearer …` substrings (case-insensitive).
-- `api-key-…@action1.com` substrings.
-- `sk-…` (16+ char) secret tokens.
-- Bare JWTs (`eyJ…eyJ…<sig>`) — covers refresh-tokens echoed in
-  non-standard fields, since OAuth2 servers occasionally echo them in
-  error bodies.
-- URL-embedded basic-auth credentials (`https://user:password@host`).
-- JSON / form-encoded credential key-value pairs that an upstream
-  OAuth-server might echo verbatim into a 4xx body —
-  `client_secret`, `refresh_token`, `access_token`, `api_key`,
-  `password`. The field name is preserved for debug-readability;
-  only the value gets `[REDACTED]`.
-- Any property whose key matches `authorization`, `api[_-]?key`,
-  `access[_-]?token`, `refresh[_-]?token`, `client[_-]?secret`, `secret`,
-  `password`, `bearer`.
-
-The same redactor runs on the *tool-output* path: `Action1ApiError.toToolErrorText()`
-and `Action1AuthError`'s constructor pipe their body through
-`redactString` before composing the user-visible error message. This
-means a 4xx body that echoes `client_id` (which the Action1 OAuth
-endpoint occasionally does) cannot leak into the LLM's view of the
-tool error.
-
-Stdout is reserved for MCP JSON-RPC traffic and never used for logging.
-This invariant is required by the MCP protocol — accidentally logging to
-stdout corrupts the transport.
-
-If you add custom logging, use the `log` helper from `src/utils/logger.ts`
-or write to `process.stderr` directly. Do not use `console.log`.
-
-### What still leaks
-
-- Action1 endpoint hostnames, user names, and machine inventory data
-  travel through the logger when at `debug` level. The redactor masks
-  credentials, not customer data. If you ship logs off-host, treat them
-  like other PII / business data.
-- Tool input payloads (e.g. PowerShell scripts in `action1_run_powershell`)
-  are not logged by default but appear in destructive-guard previews.
-  Don't pass secrets in script bodies — use Action1's *Variables* or
-  bake secrets into the target machine's environment instead.
-
-## Repository hygiene
-
-The repo enforces these constraints; review them before contributing:
-
-1. `.env` is in `.gitignore`. Never commit. `git check-ignore .env`
-   should print the matching gitignore line.
-2. The pre-commit secret-scan in `CONTRIBUTING.md` rejects any commit
-   that contains the test fixtures' anonymisation patterns
-   (`api-key-*@action1.com`, known org / endpoint / hostname / user
-   patterns from previous work).
-3. The `tests/unit/specSha.test.ts` test rejects any change to
-   `src/codegen/spec/openapi.json` without a paired update to
-   `openapi.sha256`. This catches accidental edits and forces a review
-   when the upstream Action1 spec changes.
-4. Generated tools live in `src/tools/generated/` and are committed.
-   This makes diffs review-able when the spec changes.
+Only the latest minor release receives fixes.
 
 ## Reporting a vulnerability
 
-Open a private security advisory at
-<https://github.com/mguttmann/action1-mcp/security/advisories/new> rather
-than a public issue. Provide:
+Report vulnerabilities privately through a GitHub security advisory:
+<https://github.com/mguttmann/action1-mcp/security/advisories/new>. Do not
+open a public issue. If that page is not available to you, open an issue
+that only asks for a private contact, without details.
 
-- Repro steps (a malformed payload, a missing redaction case, an auth
-  bypass).
-- Affected version / commit SHA.
-- The smallest patch that addresses it, if known.
+Please include:
 
-We aim to acknowledge within 72 hours and ship a fix within 14 days for
-high-severity issues.
+- Steps to reproduce (a malformed payload, a missing redaction case, an
+  auth bypass).
+- The affected version (`node dist/index.js --version` prints it) or commit.
+- The smallest patch that addresses it, if you have one.
+
+This is a one-maintainer project. Reports are handled on a best-effort
+basis and take priority over all other work, but there is no guaranteed
+response or fix time. You will be credited in the release notes unless
+you prefer not to be.
+
+## Threat model
+
+| Adversary or risk | Concern | Mitigation |
+|---|---|---|
+| Instructions hidden in Action1 data (indirect prompt injection) | Hostnames, software names, script output or audit texts contain text that makes the model call a destructive tool | The model sets `confirm` and `dry_run` itself, so they do not help here. What holds: `ACTION1_ALLOW_DESTRUCTIVE` and `ACTION1_ALLOW_ACCOUNT_OPS` (server env), `ACTION1_ALLOWED_ORG_IDS`, `ACTION1_TOOLSETS=read`, the Action1 role of the credential, and the MCP host's per-tool approval. The server instructions tell the model to treat Action1 data as data. |
+| Model mistake | Unintended destructive call | `dry_run` defaults to `true` (preview only), `confirm: "YES"` is required, the env switch is off by default. |
+| Network attacker, malicious web page (DNS rebinding) | Reach or hijack the HTTP transport | Bearer token required for `--http`; `Host` and `Origin` are checked on every request; TLS at a reverse proxy; bind to loopback behind the proxy. |
+| Credential exposure | Client secret ends up in chat transcripts, logs or the repo | The agent setup guide (`CLAUDE.md`) never asks for credentials in chat; the MCPB wizard stores them; logs and error texts are redacted; `.env` is git-ignored. |
+| Operator misconfiguration | Public bind without auth, typos in switches | The HTTP transport refuses to start without a token (or on a wildcard bind without `MCP_HTTP_ALLOWED_HOSTS`); invalid switch values abort startup; production checklist in [`DEPLOYMENT.md`](DEPLOYMENT.md). |
+| Supply-chain compromise | Token or payload theft through a dependency | Few runtime dependencies, lockfile, CI fails on high or critical advisories in runtime dependencies, Dependabot updates, secret scanning config for the repo. |
+| Look-alike packages | Someone publishes a package with a similar name | This project is not on npm yet; install only from this repository or its GitHub Releases. |
+
+## Destructive guard
+
+Every tool flagged `destructiveHint: true` (curated and generated alike)
+executes only when all of these hold:
+
+```
+ACTION1_ALLOW_DESTRUCTIVE=true    server env, restart required
+ACTION1_ALLOW_ACCOUNT_OPS=true    server env, only for account operations
+confirm: "YES"                    per call, exact and case-sensitive
+dry_run: false                    per call, the default is true (preview)
+```
+
+The default `dry_run: true` returns a preview of the exact `{method, path,
+body}` that would be sent, at any nesting depth; only credential-shaped
+keys and secret-shaped text are masked. The checks for an execution run in this order:
+master switch, account-operation switch, then `confirm`. A refused call
+names the missing switch or argument.
+
+**Account operations** need the second switch `ACTION1_ALLOW_ACCOUNT_OPS`:
+every non-GET call on paths under `/users`, `/roles`, `/enterprise`,
+`/organizations` or `/subscription`, `PATCH /me`, and every non-GET
+`action1_raw_request`. Turning on destructive tools for patching therefore
+does not also allow creating users or changing roles.
+
+The env switches are deliberate friction: someone who controls the server
+environment decides that this deployment may change state. The per-call
+arguments are friction for the model, not a security boundary.
+
+A preview never sends a mutating request, but a few tools need a read-only
+lookup to build it. `action1_run_script` against a single endpoint and
+`action1_execute_and_wait` read the endpoint
+(`GET /endpoints/managed/{org}/{endpoint}`, with a list fallback) before
+the guard, because the preview body depends on the endpoint's OS; the same
+read feeds the offline-abort check. `action1_run_script` with
+`target_type: "EndpointGroup"` takes the OS from its `os` argument and
+makes no upstream call for a preview. `action1_reboot_endpoint` runs its
+connectivity probe only after the guard, so its preview makes no upstream
+call either.
+
+### Limiting what the model can reach
+
+- `ACTION1_ALLOWED_ORG_IDS`: a comma-separated list of organization UUIDs.
+  Any other organization is refused, whether it comes from an `org_id`
+  argument, a resource URI, an `action1_raw_request` path or an org ID
+  inside a request body or query (also a query string written into the
+  raw request path). `ACTION1_ORG_ID` must be on the list.
+  `GET /organizations` still lists every organization the credential can
+  see, and reads of enterprise-wide resources (script library, settings,
+  data sources, custom reports, audit events) are not filtered.
+- For every guarded call (curated, generated and raw) the allowlist also
+  covers the request body at any depth: org id keys
+  (`organization_id`, `target_organization_id`, ..., compared without
+  case and separators, so `orgId`, `Org-ID` and `organizationId` match
+  too) and scope entries
+  (settings `scope`, role `include_scope` / `exclude_scope`, update
+  `scoped_approvals`; type `Organization` names its org in `object` or
+  `organization_id`). A body nested too deeply to check is refused.
+- While the allowlist is set, a mutation must be bound to an allowed
+  organization: its path contains an allowed org id and every scope
+  entry names one. An `organization_id` binds only `Organization`,
+  `Report` and `AdvancedSettingTemplate` entries; an Enterprise, Group or
+  other entry stays unbound even when it carries one. Enterprise-wide mutations (`/settings/all`,
+  `/scripts/all`, `/data-sources/all`, `/reports/all/custom`, `/roles`,
+  `/users`, `/enterprise`, `/organizations`, `/me`, Enterprise or Group
+  scope entries) are refused, previews included, unless
+  `ACTION1_ALLOW_ENTERPRISE_OPS=true`. Org ids in the body are still
+  checked with that switch on.
+- `ACTION1_TOOLSETS=read` registers only read-only tools; `curated`
+  registers only the hand-written tools. Values combine as an
+  intersection (`curated,read`).
+- Your MCP host's tool approval. Keep approval on for destructive tools;
+  do not mark them "always allow".
+- The Action1 role of the API credential. It is the only boundary inside
+  Action1 itself.
+
+### Auto-confirm mode (`ACTION1_DESTRUCTIVE_AUTO_CONFIRM=true`)
+
+For isolated single-operator test setups (a local Claude Desktop, a
+sandbox VM), typing `confirm: "YES"` on every call is friction without a
+security benefit. With `ACTION1_DESTRUCTIVE_AUTO_CONFIRM=true`:
+
+- `confirm: "YES"` is no longer required.
+- `dry_run` still defaults to `true`. A call executes only with
+  `dry_run: false`.
+- `ACTION1_ALLOW_DESTRUCTIVE=true` is still required, and
+  `ACTION1_ALLOW_ACCOUNT_OPS=true` for account operations.
+
+Do not set it in shared or production deployments. The server logs an
+`auto_confirm_enabled` warning at startup when it is on.
+
+## API credential management
+
+- The Action1 `client_id` and `client_secret` are issued in *Settings > API
+  Credentials* and bound to an Action1 role. Pick the smallest role that
+  covers what you need; the server cannot go beyond the role.
+  [`permissions.md`](permissions.md) lists the permission each operation
+  needs, generated from the spec.
+- Never pipe a credential with the *Owner* role through an agent unless
+  you know exactly which tools that agent can call.
+- Never paste the client secret into a chat with an AI assistant. If it
+  happened, treat the secret as exposed and rotate it.
+- Rotate credentials on a schedule (90 days is a reasonable default). Issue
+  a new credential, update the server configuration, restart, then revoke
+  the old one.
+
+## Data sent to the LLM provider
+
+Tool results and resource reads go to the MCP host and, from there, to the
+host's LLM provider as part of the conversation. They can contain personal
+data:
+
+- Endpoint records: the logged-in user, IP and MAC addresses, serial
+  numbers, Active Directory OU and group names.
+- `/me` and user tools: e-mail addresses and names of Action1 users.
+- Script output, audit events and inventory data: whatever the endpoint
+  or Action1 returns.
+
+If these are personal data of your employees or customers, sending them to
+an LLM provider is a processing of personal data (for example under the
+GDPR). Check that your agreement with the provider and your internal rules
+cover it. `ACTION1_REDACT_PII=true` replaces the values of personal-data
+keys with `[REDACTED:pii]` in every tool result (text and structured
+content), every resource read and every JSON upstream body an error text
+echoes (HTTP error bodies, a start response without an instance id, the
+last status of a timed-out poll).
+Keys are compared after spaces and hyphens become `_`, so the column
+display names of report rows (`fields["User Name"]`,
+`fields["IP Address"]`, `fields["Logged On User"]`) are masked like the
+spec keys. In CSV exports (`action1_report_export` with `format: "csv"`,
+the generated export tools, `action1_raw_request`) the cells of every
+column whose header matches are masked. Masked keys (case-insensitive
+unless noted):
+
+- IP addresses: `ip`, `*_ip` (such as `current_ip`), `ip_address`,
+  `ipv4`, `ipv6`.
+- E-mail: `email`, `e_mail`, `*_email` (such as `customer_email`),
+  `email_address`, and `closure_requested_by`.
+- Addresses: `address`, `*_address` (such as `external_address`,
+  `mac_address`).
+- Active Directory: every key starting with `AD_` (case-sensitive, such
+  as `AD_organization_unit`, `AD_security_groups`).
+- People and devices: `user`, `users`, `username`, `user_name`, `login`,
+  `logged_in_user`, `logged_on_user` (also with a prefix, such as
+  `Last Logged On User`), `first_name`, `last_name`, `full_name`,
+  `phone`, `mac`, `serial`, `serial_number`.
+
+`tests/security/pii.test.ts` derives the personal-data properties from
+the vendored Action1 OpenAPI spec (every `format: email`, `ipv4` or
+`ipv6` property plus the names above) and fails when one is not masked,
+so a spec refresh that adds such a field is caught. Masking does not
+inspect free text such as hostnames, script output or non-JSON error
+bodies, and report columns whose display name none of the rules above
+matches stay visible (the live report column names are not verified).
+
+Secret-shaped values (tokens, passwords) are redacted in logs, error texts
+and dry-run previews. In successful tool results and resource reads, the
+values of credential-shaped keys (the key patterns listed under
+[Redaction](#redaction), such as `client_secret`, `password`,
+`access_token`, `api_key`) are replaced with `[REDACTED]` at any depth.
+Free text is not inspected: a script that prints a secret puts that
+secret into the conversation.
+Do not pass secrets in script bodies; use Action1's variables or the
+target machine's environment instead.
+
+## HTTP transport hardening
+
+- **`MCP_HTTP_TOKEN` is required** for `--http`, also on `127.0.0.1`.
+  Without it the server refuses to start. For local development only,
+  `MCP_HTTP_ALLOW_NO_AUTH=true` runs without a token on a loopback bind and
+  logs a warning.
+- The token needs at least 16 characters; use 32 random bytes
+  (`openssl rand -hex 32`). The comparison is constant-time.
+- HTTP mode serves every client with the same Action1 credential. It is
+  not multi-tenant: whoever has the token can do what the credential and
+  the guard allow. Use `ACTION1_ALLOWED_ORG_IDS` to limit the
+  organizations.
+- Terminate TLS at a reverse proxy (Caddy, nginx, traefik, Cloudflare
+  Tunnel, a load balancer) and bind the server to `127.0.0.1` behind it.
+  Set `TRUST_PROXY=loopback` there so the per-IP rate limit sees client
+  addresses.
+- Request bodies are limited to 1 MB (413 above that); each client IP gets
+  60 requests per minute.
+- Error responses are generic; details go to the server log with a
+  `correlation_id`.
+
+## DNS rebinding and origin validation
+
+Every request to `/mcp` passes these checks, in this order:
+
+1. Rate limit per client IP.
+2. `Host` header. Accepted names: `localhost`, `127.0.0.1`, `::1`, the
+   bind address (unless it is a wildcard) and the names in
+   `MCP_HTTP_ALLOWED_HOSTS`. The port is ignored. A wildcard bind
+   (`0.0.0.0`, `::`) requires `MCP_HTTP_ALLOWED_HOSTS`.
+3. `Origin` header, when present. Accepted: the values in
+   `MCP_HTTP_ALLOWED_ORIGINS`, or loopback origins when that list is
+   empty. Requests without `Origin` (CLI clients, server-side clients) are
+   not affected.
+4. Bearer token.
+
+A foreign `Host` or `Origin` gets 403 before the token is checked, with or
+without a token. A DNS-rebinding page reaches the server under the
+attacker's own hostname, which is never accepted.
+
+## Logging and audit events
+
+Stderr carries one JSON line per event; stdout is reserved for MCP
+JSON-RPC. Lines written during a tool call share a `request_id`.
+
+| Event | Level | Meaning |
+|---|---|---|
+| `tool_call` | info (warn on error) | One per call: `tool`, `duration_ms`, `outcome` (`ok`, `error`, `dry_run`, `refused`), `upstream_status`, `attempts`, `org`, `caller`, `error` (first 300 characters). |
+| `destructive_dry_run` | info | A guarded tool returned a preview. |
+| `destructive_refused` | audit (notice) | A guarded call was refused; `reason` is `destructive_disabled`, `account_ops_disabled`, `confirm_missing`, `config_invalid` or `org_not_allowed` (`ACTION1_ALLOWED_ORG_IDS`). Carries `tool`, `method`, `path`, `org`, `caller`. |
+| `destructive_executed` | audit (notice) | A state-changing request of a guarded call is about to be sent to Action1: written right before the request leaves the server, once per request, never when a pre-flight check (for example the reboot connectivity check) aborts the call. Carries `tool`, `method`, `path`, `org`, `account_op`, `caller` and `body_sha256` (SHA-256 of the JSON body as sent, `null` without a body). Its result is in the `tool_call` line with the same `request_id`. |
+| `action_started` | audit (notice) | `action1_execute_and_wait` started an action: `tool`, `instance_id`, `org`, `endpoint_id`, written before polling begins. |
+| `http_auth_failed` | audit (notice) | HTTP 401: `reason` is `missing` or `invalid`. Never contains the presented token. |
+| `http_host_rejected`, `http_origin_rejected` | audit (notice) | HTTP 403 for a foreign `Host` or `Origin`, with the rejected value. |
+| `http_rate_limited` | audit (notice) | HTTP 429 from the per-IP rate limit. |
+| `upstream_retry` | warn | A request to Action1 is retried. |
+| `guard_config` | info | Guard settings at startup. |
+| `auto_confirm_enabled` | warn | Auto-confirm is on. |
+| `fatal`, `uncaught_exception`, `unhandled_rejection` | critical | The process is failing. |
+
+`caller` identifies who sent the MCP request: `{"transport":"stdio"}`
+for stdio; over HTTP `transport: "http"`, `remote_ip` (the peer address
+after `TRUST_PROXY`), `user_agent` (first 200 characters) and `token_id`,
+the first 12 hex characters of the SHA-256 of the accepted bearer token
+(never the token). All HTTP clients share one token, so `token_id`
+distinguishes tokens across a rotation, not people; `remote_ip` and
+`user_agent` are what tells clients apart. The `http_*` lines carry
+`status`, `remote_ip` and `user_agent`; they are written at most once per
+event, reason and client address per minute, and the next line reports
+the suppressed repeats in `suppressed_since_last`.
+
+Audit events are written regardless of `ACTION1_LOG_LEVEL` and are never
+throttled by the logger, so lowering the log level does not remove them.
+Other notice and higher lines are never throttled either.
+
+Tool arguments and tool results are not logged. Logs do contain tool
+names, organization IDs, API paths (including endpoint IDs) and the start
+of error messages. Treat shipped logs as business data.
+
+### Redaction
+
+The redactor scrubs log lines and error texts:
+
+- `Bearer ...` substrings (case-insensitive).
+- `api-key-...@action1.com` substrings.
+- `sk-...` secret tokens (16 or more characters).
+- Bare JWTs (`eyJ...eyJ...<sig>`), for refresh tokens echoed in unusual
+  fields.
+- Credentials embedded in URLs (`https://user:password@host`).
+- JSON or form-encoded `client_secret`, `refresh_token`, `access_token`,
+  `api_key` and `password` values that an OAuth server might echo into an
+  error body. The field name stays; the value becomes `[REDACTED]`.
+- Any property whose key contains `authorization`, `api[_-]?key`,
+  `access[_-]?token`, `refresh[_-]?token`, `id[_-]?token`,
+  `client[_-]?secret`, `password` or the word `bearer`, or that is
+  exactly `secret`, `token`, `cookie`, `set-cookie` or `x-action1-token`
+  (case-insensitive; `REDACT_KEY_PATTERNS` in `src/utils/logger.ts`).
+
+`Action1ApiError` and `Action1AuthError` run their body through the same
+redactor before it becomes a tool error, so an Action1 error body that
+echoes `client_id` does not reach the model.
+
+If you add logging, use the `log` helper from `src/utils/logger.ts` or
+write to `process.stderr`. Never use `console.log`: stdout carries the MCP
+protocol.
+
+## Repository hygiene
+
+1. `.env` is in `.gitignore`. Never commit it; `git check-ignore .env`
+   should print the matching rule.
+2. `.gitleaks.toml` and `.github/secret_scanning.yml` configure secret
+   scanning. They exclude the vendored spec (it contains Action1's own
+   example credentials) and the fake secrets in tests. `CONTRIBUTING.md`
+   describes a local scan for your own identifiers before committing.
+3. `tests/unit/specSha.test.ts` fails when `src/codegen/spec/openapi.json`
+   changes without a matching `openapi.sha256` and regenerated tools. It
+   cannot see changes at Action1; `npm run spec:check` and the weekly
+   spec-drift workflow do that.
+4. Generated tools live in `src/tools/generated/` and are committed, so a
+   spec update shows up as a reviewable diff.
 
 ## Known limits
 
-- Action1's API key role is the only authorisation boundary; the server
-  cannot impose finer-grained per-tool permissions beyond what the role
-  grants. If you need an analyst to be able to *list* endpoints but not
-  *run* PowerShell, issue them an Action1 credential with the
-  read-only role rather than relying on `ACTION1_ALLOW_DESTRUCTIVE=false`
-  alone.
-- The destructive guard cannot prevent an authorised user from running
-  `Remove-Item C:\` — it gates *which tools* are reachable, not what those
-  tools' inputs do. Do not use the LLM as a security boundary.
-- The server does not currently rate-limit outbound calls beyond what
-  Action1's API enforces. A misbehaving agent loop can trip Action1's 429
-  threshold; the retry layer recovers, but the burst is visible to
-  Action1's audit trail.
+- The Action1 role is the only authorisation boundary inside Action1. If
+  an analyst may list endpoints but not run PowerShell, give them a
+  credential with a read-only role instead of relying on
+  `ACTION1_ALLOW_DESTRUCTIVE=false` alone.
+- The guard decides which tools may execute, not what their inputs do. It
+  cannot stop an allowed `Remove-Item C:\`. Do not use the model as a
+  security boundary.
+- The server does not throttle outbound calls beyond Action1's own limits.
+  A looping agent can hit Action1's 429 threshold; the retry layer
+  recovers, and the burst shows up in Action1's audit trail.
 
-## Rate limits
+## Rate limits and retries
 
-Action1 does not publish a hard rate-limit ceiling. In practice we
-observe ~10 requests per second sustained on the EU instance without
-429s. When the API does return 429:
+Action1 does not publish a rate limit. The retry policy in
+`src/client/action1Client.ts` depends on the HTTP method:
 
-- The retry wrapper in `src/client/retry.ts` honours `Retry-After`
-  automatically and backs off exponentially otherwise (250ms / 500ms /
-  1s / 2s / 4s, capped at 5 attempts). Transport errors (DNS hiccups,
-  ECONNRESET, ETIMEDOUT) are also retried.
-- 4xx responses other than 429 are *not* retried — they're returned
-  verbatim with a structured tool error including the actionable hint
-  derived from the body / URL.
-- Multi-page list walks via `auto_paginate: true` and the curated
-  cursor tools naturally serialise calls — there is no concurrent
-  fan-out over pages.
-- Mass actions (deploy / reboot across an EndpointGroup) are sent as a
-  *single* API call with `target_type: "EndpointGroup"`; Action1 fans
-  out server-side, so we never make N per-endpoint POSTs.
-
-For HTTP transport specifically, the body is capped at 1 MB
-(`express.json({ limit: "1mb" })`); larger payloads are rejected with
-413 Payload Too Large before they reach the MCP server.
-
-## DNS rebinding & origin validation
-
-When the HTTP transport binds to a non-loopback host, the server
-**hard-fails to start** unless `MCP_HTTP_ALLOWED_ORIGINS` is set. The
-allowlist is checked against the `Origin` header on every `/mcp` POST;
-mismatches return 403. This implements the skill's DNS-rebinding
-guidance literally — a missing allowlist on a public bind would be a
-silent bypass otherwise.
-
-In addition to the Origin check, the server validates the `Host`
-header against the actual bind target (`expectedHosts`). A DNS-rebinding
-attacker may control DNS but cannot forge the `Host` header; this is
-the second half of the defence. IPv6 bind hosts are accepted in both
-`::1:port` and `[::1]:port` forms (the bracketed form is what
-browsers send).
-
-**Order of checks** on every `/mcp` POST:
-
-1. Origin allowlist (if configured)
-2. Host header (always when the allowlist is configured)
-3. Bearer token (`MCP_HTTP_TOKEN`, constant-time compare)
-
-A failed Origin / Host check returns 403 before the auth layer even
-runs, so DNS-rebinding probes can't even reach the Bearer check.
+- Reads (GET/HEAD) are retried on 429, 5xx and transient transport errors
+  (DNS hiccups, ECONNRESET, ETIMEDOUT), with exponential backoff or the
+  server's `Retry-After` (capped at 60 s).
+- Mutations (POST/PUT/PATCH/DELETE) are retried only on 429 and on errors
+  before the request was sent (DNS failure, connection refused, connect
+  timeout). A 5xx or a reset after sending may mean Action1 already
+  executed the mutation, so re-sending it could run a script, deployment
+  or reboot twice.
+- Other 4xx responses are not retried; they become a tool error with a
+  hint derived from the response.
+- Every call is bounded by `ACTION1_REQUEST_TIMEOUT_MS`, retries included.
+- Multi-page walks are sequential. Mass actions sent with
+  `target_type: "EndpointGroup"` are one API call; Action1 fans out
+  server-side.
 
 ## Base URL validation
 
-`ACTION1_BASE_URL` is validated at server startup with three layered
-checks:
+`ACTION1_BASE_URL` is validated at startup:
 
-1. Must be a syntactically valid URL (Zod `z.string().url()`).
-2. Must use the `https://` scheme. Plain HTTP exposes OAuth tokens to
-   network observers; `file://`, `javascript:`, `ftp://` are
-   rejected.
-3. Hostname must NOT match a known cloud-metadata host
-   (`169.254.169.254`, `metadata.google.internal`). This blocks
-   accidental SSRF if an operator misconfigures the URL on a cloud VM.
+1. It must be a valid URL.
+2. It must use `https://`. Plain HTTP would expose OAuth tokens;
+   `file://`, `javascript:` and `ftp://` are rejected.
+3. Its hostname must not be a known cloud metadata host
+   (`169.254.169.254`, `metadata.google.internal`).
 
-These checks live in `src/config.ts`'s Zod schema and run once at
-boot.
+Resolved request URLs must stay under the base URL path; paths with empty
+or dot segments are refused before any request.
+
+## Redirects
+
+The OAuth token request and every API request are sent with
+`redirect: "error"`: a 3xx answer is never followed and the call fails
+with an error. The client secret, the bearer token and mutation bodies
+therefore only ever reach the origin of `ACTION1_BASE_URL`, and a
+response from another host never reaches the model. The owner script
+`scripts/live-shape-check.mjs` sends its token and GET requests the same
+way, and a test fails when any `fetch` call in `src/` or `scripts/`
+lacks this option (the credential-free spec download excepted).
+
+## Protocol versions
+
+The server negotiates the MCP revisions 2025-06-18 and 2025-11-25 (and
+the older 2025-era revisions the SDK accepts) through `initialize`, and
+serves the 2026-07-28 revision (`server/discover`, per-request envelope)
+next to them, over stdio and HTTP. Both eras use the same server
+factory, so the guard, the org allowlist, redaction and the audit events
+are identical. Over HTTP every request passes the same rate limit,
+`Host` / `Origin` check and bearer token first. Details and the tests
+that hold this: [ADR 0001](adr/0001-mcp-sdk-version.md#serving-2026-07-28-2026-10-26).
+
+## Live shape check
+
+`npm run live:shapes` (`scripts/live-shape-check.mjs`) lets the owner of
+a tenant check which record shapes the live API returns. It is
+read-only: one OAuth token request and GET requests with a small
+`limit` on the endpoints the curated tools read, nothing else. The
+report (`live-shape-report.json`, git-ignored) holds key paths, enum-like
+words and timestamp formats with digits replaced, never record values;
+ids picked at runtime stay in memory. No CI job or release step runs it
+against a tenant; its unit test uses a stubbed API. Review the report before sharing it: enum words such as status
+names are tenant data too. See
+[`TESTING.md`](../TESTING.md#live-shape-check-owner-only).
 
 ## Output sanitisation
 
-The MCP server controls two output channels that an attacker-shaped
-Action1 string could weaponise:
+Two output channels could carry attacker-shaped Action1 strings:
 
-- **Markdown table renderer** (`src/utils/markdownTable.ts`): cell
-  values get `[`, `]`, `<`, `>`, `\\`, `|`, `&`, CR, LF escaped before
-  emission. Defuses Markdown-link injection
-  (`[click](https://attacker)`), HTML-tag injection, and
-  HTML-entity-decoded-bypass attempts (`&#60;script&#62;`).
-- **CSV report export** (`action1_report_export`'s
-  `sanitizeCsvFormulas`): cells whose first non-whitespace character
-  is `=`, `+`, `-`, `@`, TAB, or CR get prefixed with `'` so Excel /
-  Google Sheets honour them as literal text rather than formulas. The
-  prefix is **not** applied to leading-`+`/`-` numeric or
-  phone-number patterns, so `-100` and `+44 1234` pass through
-  unchanged.
+- **Markdown table renderer** (`src/utils/markdownTable.ts`): cell values
+  get `[`, `]`, `<`, `>`, `\`, `|`, `&`, CR and LF escaped. This defuses
+  Markdown links (`[click](https://attacker)`), HTML tags and
+  entity-encoded variants (`&#60;script&#62;`). Metadata below the table
+  (`note`, `next_cursor`, envelope fields) is not escaped, but line breaks
+  are collapsed so a value cannot open a heading or a new block.
+- **CSV report export** (`sanitizeCsvFormulas` in `src/utils/csv.ts`):
+  cells whose first non-whitespace character is `=`, `+`, `-`, `@`, TAB or
+  CR get a leading `'`, so spreadsheets treat them as text. Numbers and
+  phone numbers such as `-100` and `+44 1234` stay unchanged.
 
-Neither defence is needed in 2026's typical Claude Desktop client
-(which renders Markdown safely), but they're defence-in-depth against
-unknown / future MCP hosts.
+Most hosts render Markdown safely; both defences protect against hosts
+that do not.
 
 ## Token cache invalidation
 
-When the OAuth refresh-token flow fails (e.g. the refresh-token has
-expired), the server-side cache is invalidated immediately, NOT just
-the offending token returned. Without this, a dead refresh-token would
-be retried on every cold-cache lookup until it eventually rotated. The
-fall-through path issues a fresh client-credentials token and stores
-its (new) refresh-token.
+When the OAuth refresh-token flow fails (for example because the refresh
+token expired), the cached tokens are dropped immediately and the server
+falls back to a fresh client-credentials token. A dead refresh token is
+not retried on every later call.

@@ -4,38 +4,290 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly run so new advisories (npm audit) and a broken toolchain show
+  # up even when nobody pushes.
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+  # release.yml runs this whole workflow on the tag commit before it
+  # builds anything, so a release passes the same gates as main.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # github.workflow is the caller's name when release.yml calls this
+  # workflow, so a release run never cancels or waits for a CI run.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
-        node: ["20", "22"]
+        # 22 is the oldest supported line (engines >=22.12, see
+        # docs/adr/0001-mcp-sdk-version.md); 24 and 26 are current.
+        node: ["22", "24", "26"]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run typecheck:tests
       - run: npm test
       - run: npm run build
 
+  node-floor:
+    # The runtime floor (engines >=22.12) on exactly that release line:
+    # build, the test suite and a start of the built server. Lint is not
+    # run here: ESLint 10 itself needs Node >=22.13 (docs/CONTRIBUTING.md).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.12.x"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: The built server starts and lists the baseline tools
+        run: |
+          node scripts/tools-list-snapshot.mjs > "$RUNNER_TEMP/tools.json"
+          node scripts/assert-baseline-tools.mjs "$RUNNER_TEMP/tools.json"
+
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      # Fails when coverage drops below the thresholds in vitest.config.ts.
+      - run: npm run test:coverage
+
+  audit:
+    # Runtime tree of the lockfile. The deploy-path job below shows that
+    # this is exactly the tree a production install keeps.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Runtime dependencies must have no high/critical advisories
+        run: npm audit --omit=dev --audit-level=high
+      # Registry signatures (and provenance attestations where present)
+      # of every installed package, dev tools included.
+      - run: npm ci --ignore-scripts
+      - name: Installed packages carry valid registry signatures
+        run: npm audit signatures
+
+  deploy-path:
+    # The production install from docs/DEPLOYMENT.md (Bare metal / VM,
+    # Updating): build, then drop the dev dependencies. Checks that no
+    # dev package is left, audits the remaining tree and starts it.
+    # Node 22 is the oldest supported production runtime (ADR 0001).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm prune --omit=dev
+      - name: No development package is left
+        run: |
+          dev="$(npm query .dev)"
+          if [ "$dev" != "[]" ]; then
+            echo "$dev" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).map((p) => p.name + '@' + p.version).join('\\n')"
+            echo "::error::npm prune --omit=dev left development packages installed."
+            exit 1
+          fi
+      - name: The installed tree has no high/critical advisories
+        run: npm audit --omit=dev --audit-level=high
+      - name: The pruned install starts and lists the baseline tools
+        run: |
+          node scripts/tools-list-snapshot.mjs > "$RUNNER_TEMP/tools.json"
+          node scripts/assert-baseline-tools.mjs "$RUNNER_TEMP/tools.json"
+
+  mcpb-reproducible:
+    # Two clean builds of the same commit in separate checkouts (and
+    # different umasks) must give a byte-identical .mcpb, so anyone can
+    # rebuild a release asset and compare it with SHA256SUMS.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: first
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: second
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: first/package-lock.json
+      - name: Build twice
+        run: |
+          (cd first && umask 0022 && npm ci --ignore-scripts && npm run build:mcpb)
+          (cd second && umask 0002 && npm ci --ignore-scripts && npm run build:mcpb)
+      - name: Compare SHA-256 of the bundle and the SBOMs
+        run: |
+          a="$(cd first/dist && sha256sum -- *.mcpb *.cdx.json)"
+          b="$(cd second/dist && sha256sum -- *.mcpb *.cdx.json)"
+          echo "first:"; echo "$a"
+          echo "second:"; echo "$b"
+          if [ "$a" != "$b" ]; then
+            diff <(unzip -Z -T first/dist/*.mcpb) <(unzip -Z -T second/dist/*.mcpb) | head -n 40 || true
+            echo "::error::The MCPB bundle is not reproducible."
+            exit 1
+          fi
+
   codegen-roundtrip:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "20"
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
           cache: npm
       - run: npm ci
       - run: npm run codegen
       - name: Verify generated tools are committed
         run: |
-          if ! git diff --exit-code -- src/tools/generated/ src/codegen/spec/PINNED_SHA.ts; then
+          # --porcelain also lists untracked files, so a newly generated
+          # file that was never committed fails the check too.
+          changes="$(git status --porcelain -- src/tools/generated/ src/codegen/spec/ src/spec/)"
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            git diff -- src/tools/generated/ src/codegen/spec/ src/spec/
             echo "::error::Codegen produced uncommitted changes. Run npm run codegen and commit the result."
             exit 1
           fi
+
+  e2e:
+    # Builds the MCPB bundle with scripts/build-mcpb.sh and starts both
+    # the compiled stdio server and the unpacked bundle (initialize +
+    # tools/list with dummy credentials), runs a tool call against a
+    # local HTTPS stub and starts --http; no Action1 API is reached.
+    # Node 22 is the oldest supported line, 24 the release build's.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e
+
+  cross-os:
+    # Windows and macOS: build the MCPB bundle (scripts/build-mcpb.sh runs
+    # in Git Bash on Windows), then start the compiled stdio server and
+    # the unpacked bundle and check that they list the baseline tools.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build:mcpb
+      - name: The stdio server lists the baseline tools
+        run: |
+          node scripts/tools-list-snapshot.mjs > "$RUNNER_TEMP/tools.json"
+          node scripts/assert-baseline-tools.mjs "$RUNNER_TEMP/tools.json"
+      - name: The unpacked bundle lists the baseline tools
+        run: |
+          npx --no-install mcpb unpack dist/action1-mcp-*.mcpb "$RUNNER_TEMP/bundle"
+          node scripts/tools-list-snapshot.mjs --entry "$RUNNER_TEMP/bundle/server/index.js" \
+            > "$RUNNER_TEMP/bundle-tools.json"
+          node scripts/assert-baseline-tools.mjs "$RUNNER_TEMP/bundle-tools.json"
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned version, verified checksum)
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan the full git history
+        # Uses .gitleaks.toml from the repository.
+        run: '"$RUNNER_TEMP/gitleaks" git . --redact --no-banner --exit-code 1'

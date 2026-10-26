@@ -16,8 +16,8 @@ interface DescItem {
 // Action1's actual status markers are emitted in the form
 // `"<Marker>: <details>"` (e.g. `"Completed: 5 of 5 endpoints"`,
 // `"Waiting: queued"`) or as the bare marker on its own. We match
-// only those two shapes — anchored to line start, followed by either
-// a colon or end-of-line — so user-emitted strings that merely contain
+// only those two shapes (anchored to line start, followed by either
+// a colon or end-of-line), so user-emitted strings that merely contain
 // the keyword survive.
 const STATUS_MARKER_RE = /^(Starting|Waiting|Completed)(:|\s*$)/;
 

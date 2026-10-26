@@ -52,4 +52,3 @@ export function buildMacOsBashPayload(input: MacOsBashInput): AutomationInstance
     ],
   };
 }
-

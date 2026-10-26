@@ -1,0 +1,160 @@
+# Repository settings (maintainers)
+
+The workflows in `.github/workflows/` assume the GitHub settings below.
+A workflow cannot set them itself; the repository owner applies them
+once, in the web UI or with the `gh api` calls shown. Some features
+(rulesets and private vulnerability reporting on a private repository,
+CodeQL on a private repository) depend on the repository being public
+or on the GitHub plan.
+
+`tests/unit/releaseChain.test.ts` fails when a job is added to
+`ci.yml` without being listed in the required checks below.
+
+## 1. Ruleset for `main`
+
+Settings > Rules > Rulesets > New branch ruleset.
+
+- Name `main`, enforcement **Active**, target **Default branch**, no
+  bypass actors.
+- **Restrict deletions** and **Block force pushes**.
+- **Require a pull request before merging** (required approvals 0 while
+  there is a single maintainer; raise it with a second one).
+- **Require status checks to pass**, with **Require branches to be up to
+  date before merging**. Required checks (job names of
+  `.github/workflows/ci.yml`, GitHub Actions as the source):
+  - `test (22)`, `test (24)`, `test (26)`
+  - `node-floor`
+  - `format`
+  - `coverage`
+  - `audit`
+  - `deploy-path`
+  - `mcpb-reproducible`
+  - `codegen-roundtrip`
+  - `e2e (22)`, `e2e (24)`
+  - `cross-os (windows-latest)`, `cross-os (macos-latest)`
+  - `gitleaks`
+
+The same set runs again on every release tag: `release.yml` calls
+`ci.yml` on the tag commit and refuses a tag whose commit is not on
+`main`.
+
+```bash
+gh api -X POST repos/{owner}/{repo}/rulesets --input - <<'EOF'
+{
+  "name": "main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false } },
+    { "type": "required_status_checks", "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "test (22)" }, { "context": "test (24)" }, { "context": "test (26)" },
+          { "context": "node-floor" },
+          { "context": "format" }, { "context": "coverage" }, { "context": "audit" },
+          { "context": "deploy-path" }, { "context": "mcpb-reproducible" },
+          { "context": "codegen-roundtrip" },
+          { "context": "e2e (22)" }, { "context": "e2e (24)" },
+          { "context": "cross-os (windows-latest)" }, { "context": "cross-os (macos-latest)" },
+          { "context": "gitleaks" }
+        ] } }
+  ]
+}
+EOF
+```
+
+## 2. Ruleset for release tags
+
+Settings > Rules > Rulesets > New tag ruleset: name `release-tags`,
+enforcement **Active**, target pattern `v*`, bypass actor **Repository
+admin**, rules **Restrict creations**, **Restrict updates**, **Restrict
+deletions**. A published tag then cannot be moved to another commit.
+
+## 3. Actions
+
+Settings > Actions > General:
+
+- **Workflow permissions**: *Read repository contents and packages
+  permissions*. Every workflow declares its own minimal `permissions`;
+  only the `github-release` and `npm-publish` jobs of `release.yml` ask
+  for more.
+- **Allow GitHub Actions to create and approve pull requests**: off.
+- **Actions permissions**: allow actions created by GitHub (all actions
+  in use are `actions/*`, pinned by commit SHA).
+- **Fork pull request workflows**: require approval for all outside
+  collaborators.
+
+```bash
+gh api -X PUT repos/{owner}/{repo}/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+```
+
+## 4. Code security
+
+Settings > Code security:
+
+- **Private vulnerability reporting**: on (the confidential channel
+  `docs/SECURITY.md` points to).
+- **Dependabot alerts** and **Dependabot security updates**: on.
+  Version updates are configured in `.github/dependabot.yml`.
+- **Secret scanning** with **push protection**: on. The `gitleaks` job
+  scans the full history in CI as well.
+- **CodeQL**: default setup for JavaScript/TypeScript and GitHub
+  Actions. After its first run, add its check to the `main` ruleset.
+
+```bash
+gh api -X PUT repos/{owner}/{repo}/private-vulnerability-reporting
+gh api -X PUT repos/{owner}/{repo}/vulnerability-alerts
+gh api -X PUT repos/{owner}/{repo}/automated-security-fixes
+```
+
+## 5. npm publishing
+
+Stays off until both are done:
+
+- On npmjs.com, add a trusted publisher for the package: this
+  repository, workflow `release.yml`.
+- Set the repository variable `NPM_PUBLISH_ENABLED` to `true`.
+
+The `npm-publish` job then publishes the tarball the `build` job packed,
+after the GitHub release exists, with provenance.
+
+Prerequisites, in this order:
+
+1. **Public repository.** npm creates provenance statements only for
+   packages built from a public source repository; a publish with
+   `--provenance` from a private repository fails. Make the repository
+   public before the first workflow publish.
+2. **First publish by hand.** The trusted publisher is a setting of an
+   existing package on npmjs.com, so the package must exist first.
+   Publish the first version manually from a maintainer account with
+   two-factor authentication (`npm publish --access public`, ideally
+   with the tarball of a release); this also reserves the name. That
+   version carries no provenance.
+3. **Trusted publisher.** On npmjs.com, package settings, add the
+   GitHub Actions trusted publisher: owner and repository of this
+   repository, workflow file `release.yml`, no environment (the
+   `npm-publish` job declares none). The job needs no `NPM_TOKEN`; it
+   checks that its npm is 11.5.1 or newer, which trusted publishing
+   requires.
+4. **Switch on.** Set `NPM_PUBLISH_ENABLED` to `true`. From the next
+   release tag on, the job publishes with provenance through OIDC.
+   Optionally, in the package settings, disallow token-based publishing
+   afterwards so only the workflow can publish.
+
+## Check the result
+
+```bash
+gh api repos/{owner}/{repo}/rulesets
+gh api repos/{owner}/{repo}/actions/permissions/workflow
+gh api repos/{owner}/{repo}/private-vulnerability-reporting
+gh api repos/{owner}/{repo}/vulnerability-alerts   # 204 when on
+```

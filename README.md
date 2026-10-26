@@ -1,461 +1,492 @@
 # action1-mcp-server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
-![Coverage](https://img.shields.io/badge/Action1%20API-100%25-success)
-![Tools](https://img.shields.io/badge/MCP%20tools-166%20%2833%20curated%20%2B%20133%20generated%29-informational)
-![Tests](https://img.shields.io/badge/tests-527%20across%204%20categories-brightgreen)
+![Node](https://img.shields.io/badge/node-%E2%89%A522.12-brightgreen)
 
-A production-grade [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
-server for the [Action1 RMM](https://www.action1.com/) REST API. Wraps the
-entire Action1 API surface so that Claude (or any other MCP host) can run
-PowerShell on Windows, Bash on macOS, deploy updates, reboot endpoints,
-search audit trails, build CVE remediation plans, and more — all via
-natural language and with a three-layer destructive guard so the LLM
-cannot accidentally mutate production state.
+An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
+server for the [Action1 RMM](https://www.action1.com/) REST API. It lets
+Claude (or any other MCP host) query your Action1 fleet, run PowerShell on
+Windows and Bash on macOS, deploy updates, reboot endpoints, search audit
+trails and build CVE remediation plans, with a guard that keeps state
+changes off unless you switch them on.
 
-> **Status:** v0.5.0 — 100 % coverage of the pinned Action1 OpenAPI 3.1.0
-> spec, exposed as **166 tools** (33 curated incl. 6 workflow wrappers +
-> 133 auto-generated) with pinned SHA, hybrid architecture, three-layer
-> destructive guard,
-> stdio and Streamable HTTP transports, MCPB bundle, CI.
-> Full conformance pass against the Anthropic
-> [`mcp-builder` skill best practices](https://github.com/anthropics/skills/tree/main/skills/mcp-builder)
-> (server name, tool annotations, response_format, output schemas,
-> Markdown rendering, character limits, evaluation suite).
+> **Unofficial project.** This server is not affiliated with, endorsed by,
+> sponsored by or supported by Action1 Corporation. "Action1" is a
+> trademark of Action1 Corporation. See [`NOTICE`](NOTICE).
+
+## Status
+
+Every operation of the pinned Action1 OpenAPI snapshot is reachable
+through a tool (see [What is covered](#what-is-covered)). The server
+speaks stdio and Streamable HTTP and ships as an MCPB bundle for Claude
+Desktop. Releases and their changes: [`CHANGELOG.md`](CHANGELOG.md).
+
+### Validation status
+
+Read this before you let an agent change anything in your fleet.
+
+- **Automated tests** (`npm test`) run against mocked Action1 responses:
+  unit tests, MCP protocol round trips through the SDK client, the
+  destructive-guard truth table, redaction and size limits. Every
+  generated tool that changes state is driven through MCP to prove it is
+  guarded. These tests run in CI on Node 22, 24 and 26.
+- **Live runs against a real Action1 tenant** are recorded in
+  [`TESTING.md`](TESTING.md). They were made while versions 0.1 to 0.3 were
+  developed and were not dated. They cover the read tools (organizations,
+  endpoints, pagination, templates, missing updates), read-only script
+  execution on Windows and macOS (`action1_execute_and_wait`,
+  `action1_run_script`) and the guard's refusal paths.
+- **Read-only live shape check (2026-10-26)** for 0.6.0: GET requests
+  against a real tenant compared the returned record shapes with the
+  vendored spec. Endpoints, vulnerabilities, installed software,
+  automation instances and schedules, missing updates, endpoint groups
+  and both list envelopes match the spec; audit events are still
+  unverified (the key lacked `view_audit`). Details in
+  [`TESTING.md`](TESTING.md#live-shape-check-2026-10-26). Apart from this
+  check, the changes in 0.6.0 are covered by the automated tests only; a
+  live smoke run of the 0.6.0 tools is pending.
+- **Never run against a live tenant:** `action1_reboot_endpoint`,
+  `action1_deploy_update`, `action1_deploy_package`,
+  `action1_uninstall_program`, `action1_run_data_collection`, removing an
+  endpoint from a group, `action1_run_script` with
+  `target_type: "EndpointGroup"`, every generated tool that changes state,
+  and every account operation (users, roles, organizations, enterprise).
+  Their request bodies follow the Action1 OpenAPI spec and are checked by
+  tests, but nobody has confirmed that Action1 accepts them. Try them on
+  a test endpoint first and look at the dry-run preview before you
+  execute.
+
+### Maintenance status
+
+- Maintained on a best-effort basis by one maintainer
+  ([@mguttmann](https://github.com/mguttmann)) in spare time. The author
+  uses it in production. There is no support contract and no guaranteed
+  response time.
+- Security fixes take priority over features. Report vulnerabilities
+  privately (see [Security](#security)).
+- Dependency updates come from Dependabot; CI fails when a runtime
+  dependency has a known high or critical advisory. A weekly job reports
+  when Action1 serves a different API spec than the pinned snapshot.
+- Only the latest minor release gets fixes.
+- Issues and pull requests are welcome; see
+  [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Why this project
 
-Action1 has a clean REST API but a thick layer of LLM-unfriendly quirks
-that, if unhandled, silently produce wrong results:
+Action1 has a clean REST API, but a few quirks silently produce wrong
+results when an LLM calls it naively:
 
-- macOS Bash actions need a **ten-field `run_script` payload** the API
-  returns `not applicable to Mac platform` for any field that is missing.
-- Windows PowerShell actions need a **non-empty `success_exit_codes`**.
-- `last_seen` is `YYYY-MM-DD_HH-MM-SS` (UTC), not ISO-8601 — `Date.parse`
-  returns `NaN` (we render it human-readable in Markdown output).
-- The `self` URL of a list-endpoint includes a `/general` segment that is
-  **not** a real REST resource.
-- The script-output stream is interleaved with `Starting` / `Waiting` /
-  `Completed` lifecycle markers that need to be filtered.
-- `OS` is upper-case, `platform` is lower-case, both can carry the
-  platform string; we normalise via a single detector.
+- macOS Bash actions need a ten-field `run_script` payload; the API
+  answers `not applicable to Mac platform` for any missing field.
+- Windows PowerShell actions need a non-empty `success_exit_codes`.
+- `last_seen` is `YYYY-MM-DD_HH-MM-SS` (UTC), not ISO-8601, so `Date.parse`
+  returns `NaN`. The server parses it and renders it readable.
+- The `self` URL of a list item contains a `/general` segment that is not
+  a real REST resource.
+- Script output is interleaved with `Starting` / `Waiting` / `Completed`
+  lifecycle markers that need to be filtered.
+- `OS` is upper-case and `platform` lower-case, and both can carry the
+  platform string; one detector normalises them.
 
-This server encodes all of those. See
-[`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md) §"Cross-repo
-comparison" for what other Action1 MCP projects miss.
+The curated tools encode all of these. What the server does not cover is
+listed in [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md).
 
-## Highlights
+## Install
 
-- **100 % API coverage** — every operation in the pinned Action1 OpenAPI
-  3.1.0 spec is reachable through exactly one MCP tool. Mapping in
-  [`docs/api-coverage.md`](docs/api-coverage.md). The pin is enforced by
-  a unit test (`tests/unit/specSha.test.ts`) so an upstream spec change
-  fails the build instead of silently rotting the surface.
-- **Hybrid architecture** — hand-curated tools that encode the quirks
-  above + auto-generated tools from the spec + high-level workflow
-  wrappers (CVE remediation plan, audit log search, software inventory,
-  recurring schedules, report export, group resolver).
-- **MCP-protocol completeness** — beyond tools, the server also ships:
-  - **7 Resources** (`action1://me`, `://orgs`, `://templates`,
-    `://reports`, `://endpoints/{orgId}`, `://groups/{orgId}`,
-    `://vulnerabilities/{orgId}`) for hosts that pre-fetch context. All
-    list-shaped resources are capped to fit the 1 MB host limit and emit
-    a truncation note when the cap fires.
-  - **6 Slash-Prompts** (`/patch-windows-fleet`, `/audit-vulnerabilities`,
-    `/triage-offline-endpoints`, `/run-script-fleetwide`,
-    `/software-inventory-sweep`, `/check-my-permissions`) for
-    one-click workflows.
-  - **`logging/setLevel`** — clients can dynamically bump or lower
-    verbosity at runtime.
-  - **Cancellation propagation** — long-running tools (`auto_paginate`,
-    `wait_for_automation`, `execute_and_wait`) honour the host's
-    AbortSignal.
-  - **`outputSchema`** declared on every list-shaped read tool for
-    client-side validation.
-- **Skill-conformant tools** — every tool emits `response_format`
-  (`markdown` default, `json` opt-in), a structured description with
-  `Args / Returns / Examples / Error Handling` sections, all four
-  annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
-  `openWorldHint`) explicitly set, and `total` / `count` /
-  `next_cursor` / `has_more` on every paginated response.
-- **Markdown rendering with humanised values** — Action1 timestamps
-  (`YYYY-MM-DD_HH-MM-SS`) render as `YYYY-MM-DD HH:MM:SS UTC`; ID
-  columns lead the table; per-tool `CHARACTER_LIMIT = 25_000` keeps
-  agent context lean.
-- **Three-layer destructive guard** — `ACTION1_ALLOW_DESTRUCTIVE` env
-  switch + per-call `confirm: "YES"` + `dry_run: true` (default). The LLM
-  cannot accidentally mutate production state. Optional
-  `ACTION1_DESTRUCTIVE_AUTO_CONFIRM` for isolated single-operator
-  setups (still requires the env switch).
-- **Sound auth** — OAuth2 client-credentials with proactive 5-minute
-  refresh, in-flight deduplication of concurrent token requests, and
-  refresh_token-first fallback when re-acquiring.
-- **Robust transport** — retry with exponential backoff for DNS hiccups,
-  HTTP 5xx, and 429 (honors `Retry-After`). Pagination walks `limit`/`from`
-  transparently with caller-supplied caps.
-- **Both transports** — stdio (default; for local Claude Code / Cursor /
-  Claude Desktop) + Streamable HTTP, stateless (for hosted Claude.ai
-  custom connectors / team setups). HTTP transport supports bearer-token
-  auth via `MCP_HTTP_TOKEN` (constant-time compare), a 1 MB body limit,
-  and **hard-fails on non-loopback bind without an Origin allowlist**.
-- **Distribution** — MCPB bundle for Claude Desktop one-click
-  install, npm publish-ready.
-- **Observability** — structured JSON-line logs to stderr with
-  auto-redaction of `Bearer …`, `api-key-…`, and any property whose
-  key looks sensitive (`authorization`, `*_token`, `*_secret`,
-  `password`, …). Stdout reserved for MCP JSON-RPC.
-- **Strict TypeScript** with Zod input schemas on every tool. **527
-  tests across 4 categories** (unit / integration / security / performance).
+### Claude Desktop: MCPB bundle (recommended)
 
-## Quickstart
+1. Download `action1-mcp-<version>.mcpb` from the project's
+   [GitHub Releases](https://github.com/mguttmann/action1-mcp/releases).
+   The release workflow attaches it to every version tag.
+2. Double-click it (or drag it onto Claude Desktop, or use Settings >
+   Extensions > Install from file).
+3. Fill in the wizard: API base URL of your region, organization ID,
+   client ID and client secret, and whether destructive operations are
+   allowed (leave this off at first).
+
+Claude Desktop runs the bundle with its built-in Node.js. Details and
+troubleshooting: [`docs/INSTALLATION.md`](docs/INSTALLATION.md#claude-desktop-macos--windows).
+
+### From source (any MCP host)
+
+Requires Node.js 22.12 or newer (`engines` in `package.json`); CI tests
+Node 22, 24 and 26.
 
 ```bash
 git clone https://github.com/mguttmann/action1-mcp.git
 cd action1-mcp
-npm install
-cp .env.example .env             # edit with your Action1 credentials
-npm run build
-npm run inspector                # opens MCP Inspector against the built server
+npm ci
+cp .env.example .env             # fill in your Action1 credentials
+npm run build                    # compiles to dist/ (tsc only)
 ```
 
-Or attach directly to Claude Code:
+Attach it to Claude Code:
 
 ```bash
 claude mcp add action1 -- node --env-file=$(pwd)/.env $(pwd)/dist/index.js
 ```
 
-For the full installation walkthrough — including Claude Desktop, Claude.ai,
-Cursor, Continue.dev, and Cody — see [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+`npm run inspector` opens the MCP Inspector against the built server
+(needs Node 22.19 or newer). Other hosts (Claude Desktop with a JSON
+config, Claude.ai, Cursor, Continue.dev, Cody) are covered in
+[`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+
+### npm
+
+Publishing to npm is planned but has not happened yet. There is no
+official npm package, so do not install `action1-mcp-server` or any
+similarly named package from the registry: it would not be this code.
+
+## What is covered
+
+- **Generated tools:** every operation of the pinned Action1 OpenAPI
+  snapshot (date in [`src/codegen/spec/SOURCE.md`](src/codegen/spec/SOURCE.md))
+  becomes a verb-first tool such as `action1_list_endpoint_groups`,
+  unless a curated tool covers it. Exceptions: `POST /oauth2/token` is
+  used internally and not exposed, and the two package-upload operations
+  return an explanatory error because they need a binary body. The full
+  mapping is generated into [`docs/_coverage_table.md`](docs/_coverage_table.md);
+  [`docs/api-coverage.md`](docs/api-coverage.md) explains it.
+- **Curated tools** for the common workflows, including high-level
+  wrappers (CVE remediation plan, audit log search, software inventory,
+  recurring schedules, report export, group resolver).
+- **Resources** (`action1://me`, `action1://orgs`, `action1://templates`,
+  `action1://reports`, `action1://endpoints/{orgId}`,
+  `action1://groups/{orgId}`, `action1://vulnerabilities/{orgId}`) for
+  hosts that pre-fetch context.
+- **Slash prompts** for multi-step jobs (`/patch-windows-fleet`,
+  `/audit-vulnerabilities`, `/triage-offline-endpoints`,
+  `/run-script-fleetwide`, `/software-inventory-sweep`,
+  `/check-my-permissions`).
+
+`tests/unit/specSha.test.ts` ties the generated tools to the pinned
+snapshot. It does not see changes at Action1; `npm run spec:check` and a
+weekly CI job compare the snapshot with the spec Action1 serves.
+
+## Highlights
+
+- **Guarded state changes.** Tools that change state need
+  `ACTION1_ALLOW_DESTRUCTIVE=true`, default to a dry-run preview and need
+  `confirm: "YES"` to execute. Account operations need a second switch.
+  See [Destructive guard](#destructive-guard).
+- **Scoping.** `ACTION1_ALLOWED_ORG_IDS` limits which organizations the
+  tools may address; `ACTION1_TOOLSETS=read` registers only read-only
+  tools.
+- **Output for agents.** Every read-only tool accepts `response_format`
+  (`markdown` default, `json`); every tool sets all four MCP annotations
+  and declares an `outputSchema`. Paginated results carry `count`,
+  `has_more`, `next_cursor`, and `total` on the final page. Results stay
+  under the 1 MB host limit with visible truncation notes.
+- **Strict inputs.** Unknown or misspelled arguments are rejected with a
+  validation error instead of being ignored.
+- **Auth.** OAuth2 client credentials with proactive refresh, deduplicated
+  concurrent token requests and a refresh-token fallback.
+- **Transport safety.** Reads (GET/HEAD) are retried on network errors,
+  HTTP 5xx and 429 (honouring `Retry-After`). Mutations are sent once and
+  retried only on 429 or when the connection failed before the request
+  was sent, so a retry never runs an action twice. Every Action1 call is
+  bounded by `ACTION1_REQUEST_TIMEOUT_MS`.
+- **Two transports.** stdio (default) and stateless Streamable HTTP, both
+  serving MCP 2026-07-28 next to the 2025 revisions
+  ([ADR 0001](docs/adr/0001-mcp-sdk-version.md)). HTTP
+  requires a bearer token, checks `Host` and `Origin` against DNS
+  rebinding, limits bodies to 1 MB and rate-limits per client IP.
+- **Logs.** Structured JSON lines on stderr with credential redaction, one
+  `tool_call` line per call and audit lines for guarded operations.
+  Stdout is reserved for MCP.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Curated tools + Workflow wrappers                                     │
-│ • script execution (Win + Mac + OS-aware)                             │
-│ • execute_and_wait (POST + poll + filtered output)                    │
-│ • get_endpoint with /general → canonical path + list-fallback         │
-│ • CVE remediation plan, audit log search, software inventory, …      │
-├──────────────────────────────────────────────────────────────────────┤
-│ Auto-generated tools                                                  │
-│ • one tool per remaining spec operation, verb-first snake_case names  │
-│ • shared runtime: pagination, destructive guard, error mapping        │
-│ • Action1 OpenAPI 3.1.0 pinned at SHA af75f1cc…                       │
-├──────────────────────────────────────────────────────────────────────┤
-│ Shared infrastructure                                                  │
-│ • Action1Client (auth, retry, pagination, error mapping)               │
-│ • TokenProvider (refresh_token fallback, 5-min proactive refresh)      │
-│ • OrgResolver (fuzzy name match, session cache)                        │
-│ • Three-layer destructive guard (env + confirm + dry_run)              │
-│ • Structured stderr logger with auto-key redaction                     │
-│ • Markdown auto-table renderer (humanises Action1 timestamps)          │
-│ • Per-tool CHARACTER_LIMIT = 25_000 + WIRE_LIMIT_BYTES = 400_000       │
-└──────────────────────────────────────────────────────────────────────┘
++----------------------------------------------------------------------+
+| Curated tools and workflow wrappers                                  |
+|  - script execution (Windows, macOS, OS-aware routing)               |
+|  - execute_and_wait (start + poll + filtered output)                 |
+|  - get_endpoint (canonical path + list fallback)                     |
+|  - CVE remediation plan, audit log search, software inventory, ...   |
++----------------------------------------------------------------------+
+| Generated tools                                                      |
+|  - one tool per remaining spec operation, verb-first snake_case      |
+|  - shared runtime: pagination, destructive guard, error mapping      |
+|  - Action1 OpenAPI 3.1 snapshot, SHA-pinned (spec/openapi.sha256)    |
++----------------------------------------------------------------------+
+| Shared infrastructure                                                |
+|  - Action1Client (auth, retry, timeouts, path safety, error mapping) |
+|  - TokenProvider (refresh_token fallback, proactive refresh)         |
+|  - destructive guard, org allowlist, toolset filter                  |
+|  - structured stderr logger with redaction                           |
+|  - Markdown table renderer, response size budgets                    |
++----------------------------------------------------------------------+
 ```
 
-When a curated tool and an auto-generated tool address the same path, the
-curated one wins by name and the auto-generated one is suppressed via
-`src/codegen/curated-overrides.ts`. See
-[`docs/api-coverage.md`](docs/api-coverage.md) for the full mapping.
+When a generated tool would get the same name as a curated tool, the code
+generator (`src/codegen/generate.ts`) drops the generated one; operations
+listed in `SKIP_OPERATION_IDS` (`src/codegen/curated-overrides.ts`) are
+skipped as well. Design decisions are recorded in
+[`docs/adr/`](docs/adr/README.md).
 
 ## Configuration
 
-All configuration is via environment variables; copy
-[`.env.example`](.env.example) to `.env` and fill in.
+All configuration is via environment variables. Copy
+[`.env.example`](.env.example) to `.env` and fill it in; empty values mean
+"use the default". `node dist/index.js --help` lists the same variables.
 
-| Variable | Required | Default | Description |
-|---|:-:|---|---|
-| `ACTION1_BASE_URL` | yes | — | Region-specific instance, e.g. `https://app.eu.action1.com/api/3.0`. |
-| `ACTION1_CLIENT_ID` | yes | — | OAuth2 client id from Action1 → Settings → API Credentials. |
-| `ACTION1_CLIENT_SECRET` | yes | — | OAuth2 client secret. Shown once at credential creation. |
-| `ACTION1_ORG_ID` | recommended | — | Default org UUID. Each tool can override via `org_id`. |
-| `ACTION1_DEFAULT_TIMEOUT_MINUTES` | no | `10` | Per-action timeout (PowerShell, etc.). |
-| `ACTION1_DEFAULT_RETRY_MINUTES` | no | `1440` | Window during which Action1 retries when an endpoint is offline. |
-| `ACTION1_LOG_LEVEL` | no | `info` | One of `debug`, `info`, `notice`, `warn`, `warning`, `error`, `critical`, `alert`, `emergency`. |
-| `ACTION1_LAST_SEEN_STALE_MINUTES` | no | `10` | Minutes since `last_seen` before an endpoint is treated as offline (range 1–1440). Tune up for fleets that check in infrequently. |
-| `ACTION1_ALLOW_DESTRUCTIVE` | no | `false` | Set to `true` / `1` / `yes` to allow tools with `destructiveHint: true` to mutate state. |
-| `ACTION1_DESTRUCTIVE_AUTO_CONFIRM` | no | `false` | Single-operator only: waives the per-call `confirm: "YES"` requirement. `dry_run` still defaults to `true` — pass `dry_run: false` to actually execute. Still requires `ACTION1_ALLOW_DESTRUCTIVE=true`. |
-| `PORT` | no | `3000` | HTTP transport port. |
-| `HOST` | no | `127.0.0.1` | HTTP transport host. |
-| `MCP_HTTP_TOKEN` | no | unset | Required `Authorization: Bearer <token>` on `/mcp` when set. **Strongly recommended for any non-loopback bind.** |
-| `MCP_HTTP_ALLOWED_ORIGINS` | no | unset | Comma-separated allowlist for browser `Origin` headers. **Required when binding to a non-loopback host** — the server hard-fails to start otherwise. |
-| `TRUST_PROXY` | no | `false` | Reverse-proxy hop trust for correct client IPs in rate-limiting. One of `false` / `true` / `loopback` / a CIDR. Enable only for trusted upstream proxies. |
+| Variable | Default | Description |
+|---|---|---|
+| `ACTION1_BASE_URL` | required | API base URL of your region, see below. |
+| `ACTION1_CLIENT_ID` | required | OAuth2 client ID from Action1 > Settings > API Credentials. |
+| `ACTION1_CLIENT_SECRET` | required | OAuth2 client secret, shown once when the credential is created. |
+| `ACTION1_ORG_ID` | unset | Default organization UUID; tools can override it with `org_id`. Recommended. |
+| `ACTION1_ALLOWED_ORG_IDS` | any | Comma-separated organization UUIDs the tools may address; others are refused. Recommended for HTTP and shared setups. |
+| `ACTION1_ALLOW_ENTERPRISE_OPS` | `false` | With `ACTION1_ALLOWED_ORG_IDS` set: also allows mutations not bound to one allowed organization (enterprise settings, script library, roles, users, Enterprise scopes). |
+| `ACTION1_ALLOW_DESTRUCTIVE` | `false` | `true` / `1` / `yes` allows tools that change state to execute. |
+| `ACTION1_ALLOW_ACCOUNT_OPS` | `false` | Also allows account operations: changes to users, roles, `/me`, the enterprise account, organizations and subscriptions, and every non-GET `action1_raw_request`. |
+| `ACTION1_DESTRUCTIVE_AUTO_CONFIRM` | `false` | Isolated single-operator setups only: drops the per-call `confirm: "YES"`. `dry_run` still defaults to `true`. |
+| `ACTION1_TOOLSETS` | `all` | `all`, `read` (read-only tools) or `curated` (no generated tools); comma-separated values intersect. |
+| `ACTION1_REDACT_PII` | `false` | Masks user names, IP and MAC addresses, other addresses, serial numbers, e-mail addresses, Active Directory fields and personal names in tool output (also report columns such as `User Name` and CSV export columns), resource reads and upstream error bodies. Rules and limits: [SECURITY.md](docs/SECURITY.md). |
+| `ACTION1_DEFAULT_TIMEOUT_MINUTES` | `10` | Default script timeout, 0 to 10080. |
+| `ACTION1_DEFAULT_RETRY_MINUTES` | `1440` | How long Action1 retries an action for an offline endpoint, 0 to 10080. |
+| `ACTION1_LAST_SEEN_STALE_MINUTES` | `10` | Minutes since `last_seen` before an endpoint counts as offline, 1 to 1440: the offline check before an action, `connectivity.online` of `action1_get_endpoint` and the fresh / stale counts of `action1_endpoints_summary`. |
+| `ACTION1_REQUEST_TIMEOUT_MS` | `60000` | Budget for one Action1 API call including retries, 1000 to 600000. |
+| `ACTION1_TOKEN_TIMEOUT_MS` | `15000` | Timeout for one OAuth token attempt, 1000 to 600000. |
+| `ACTION1_LOG_LEVEL` | `info` | `debug`, `info`, `notice`, `warn`, `error`, `critical`, `alert` or `emergency` (case-insensitive). |
+| `PORT` | `3000` | HTTP mode: listen port. |
+| `HOST` | `127.0.0.1` | HTTP mode: bind address. |
+| `MCP_HTTP_TOKEN` | required for `--http` | Bearer token clients must send, at least 16 characters (`openssl rand -hex 32`). |
+| `MCP_HTTP_ALLOW_NO_AUTH` | `false` | HTTP mode without a token; loopback binds only, local development. |
+| `MCP_HTTP_ALLOWED_HOSTS` | loopback and bind address | Extra `Host` names to accept, e.g. the public name behind a reverse proxy. Required for `0.0.0.0` / `::`. |
+| `MCP_HTTP_ALLOWED_ORIGINS` | loopback origins | Browser `Origin` values to accept. |
+| `TRUST_PROXY` | `false` | Express `trust proxy`: `false`, `true`, `loopback`, a hop count or a CIDR list. Set `loopback` behind a local reverse proxy so the rate limit sees real client IPs. |
+
+Action1 regions (`ACTION1_BASE_URL`):
+
+| Region | Base URL |
+|---|---|
+| Europe | `https://app.eu.action1.com/api/3.0` |
+| North America | `https://app.action1.com/api/3.0` |
+| North America 2 | `https://app.na-2.action1.com/api/3.0` |
+| United Kingdom | `https://app.uk.action1.com/api/3.0` |
+| Australia | `https://app.au.action1.com/api/3.0` |
 
 ## Connecting to MCP hosts
 
 | Host | Transport | Doc |
 |---|---|---|
-| Claude Code (CLI) | stdio | [INSTALLATION § Claude Code](docs/INSTALLATION.md#claude-code-cli) |
-| Claude Desktop (macOS / Windows) | stdio | [INSTALLATION § Claude Desktop](docs/INSTALLATION.md#claude-desktop-macos--windows) |
-| Claude.ai (web) | Streamable HTTP | [INSTALLATION § Claude.ai](docs/INSTALLATION.md#claudeai-web) |
-| Cursor | stdio | [INSTALLATION § Cursor](docs/INSTALLATION.md#cursor) |
-| Continue.dev / Cody | stdio | [INSTALLATION § generic](docs/INSTALLATION.md#continuedev--cody--generic-stdio-clients) |
+| Claude Code (CLI) | stdio | [INSTALLATION: Claude Code](docs/INSTALLATION.md#claude-code-cli) |
+| Claude Desktop (macOS / Windows) | MCPB bundle or stdio | [INSTALLATION: Claude Desktop](docs/INSTALLATION.md#claude-desktop-macos--windows) |
+| Claude.ai (web) | Streamable HTTP | [INSTALLATION: Claude.ai](docs/INSTALLATION.md#claudeai-web) |
+| Cursor | stdio | [INSTALLATION: Cursor](docs/INSTALLATION.md#cursor) |
+| Continue.dev / Cody | stdio | [INSTALLATION: generic](docs/INSTALLATION.md#continuedev--cody--generic-stdio-clients) |
 
 ## Tools
 
-See [`docs/USAGE.md`](docs/USAGE.md) for the full tool reference and
-[`docs/EXAMPLES.md`](docs/EXAMPLES.md) for end-to-end recipes.
-
-A summary of the curated layer (the auto-generated layer is the long
-tail and is documented operation-by-operation in `docs/api-coverage.md`):
+[`docs/USAGE.md`](docs/USAGE.md) is the tool reference and
+[`docs/EXAMPLES.md`](docs/EXAMPLES.md) has end-to-end recipes. The curated
+layer in short:
 
 ### Discovery (read-only)
 
 `action1_list_organizations`, `action1_list_endpoints`,
-`action1_endpoints_summary` (server-side aggregation: ~1 KB regardless
-of fleet size), `action1_get_endpoint` (with /general → canonical
-path fallback, plus derived `platform` and `connectivity.online`),
-`action1_search_endpoints` (substring filter on hostname / user / OS /
+`action1_endpoints_summary` (server-side counters, small output regardless
+of fleet size), `action1_get_endpoint` (canonical path with list fallback,
+plus derived `platform` and `connectivity.online`),
+`action1_search_endpoints` (substring filter on hostname, user, OS,
 status), `action1_list_action_templates`, `action1_get_action_template`,
-`action1_list_missing_updates`, `action1_list_vulnerabilities` (graceful
-403 if scope absent), `action1_list_recent_automations`,
-`action1_automations_summary`.
+`action1_list_missing_updates`, `action1_list_vulnerabilities`,
+`action1_list_recent_automations`, `action1_automations_summary`.
 
-### Execution (destructive — guard required)
+### Execution (destructive, guarded)
 
-`action1_run_powershell` (Windows; auto-fills `success_exit_codes`),
-`action1_run_bash_macos` (macOS; auto-fills the ten `run_script` fields),
-`action1_run_script` (auto-routes by OS), `action1_reboot_endpoint`,
-`action1_deploy_update` (spec-conformant `{scope, packages, reboot_options}`),
-`action1_deploy_package`, `action1_uninstall_program`,
-`action1_run_data_collection`. All accept `target_type: "Endpoint"` (default)
-or `"EndpointGroup"` for bulk fan-out.
+`action1_run_powershell` (Windows; fills `success_exit_codes`),
+`action1_run_bash_macos` (macOS; fills the ten `run_script` fields),
+`action1_run_script` (routes by OS), `action1_reboot_endpoint`,
+`action1_deploy_update`, `action1_deploy_package`,
+`action1_uninstall_program`, `action1_run_data_collection`. All accept
+`target_type: "Endpoint"` (default) or `"EndpointGroup"`;
+`action1_run_script` then also needs `os` (`"windows"` or `"macos"`),
+because a group has no single OS to detect.
 
-### Polling / results (read-only)
+### Polling and results (read-only)
 
 `action1_get_automation_status`, `action1_get_automation_results`,
-`action1_get_automation_output` (filters `Starting`/`Waiting`/`Completed`),
+`action1_get_automation_output` (filters lifecycle markers),
 `action1_wait_for_automation`.
 
-### Workflows (destructive)
+### Workflows (destructive, guarded)
 
-`action1_execute_and_wait` — start an action, poll until it terminates,
-return the filtered output. Auto-routes by OS for `mode: "script"` or runs
-a named template for `mode: "template"`.
+`action1_execute_and_wait`: start an action, poll until it ends and return
+the filtered output. Routes by OS in `mode: "script"` or runs a named
+template in `mode: "template"`.
 
 ### High-level wrappers
 
-`action1_endpoint_groups_resolve` (fuzzy name → UUID),
+`action1_endpoint_groups_resolve` (fuzzy group name to UUID),
 `action1_software_inventory_for_endpoint`, `action1_recurring_schedules`,
 `action1_audit_log_search`, `action1_report_export`,
 `action1_cve_remediation_plan`.
 
-### Auto-generated
+### Generated
 
-Every remaining Action1 API operation as a verb-first snake_case tool.
-See [`docs/api-coverage.md`](docs/api-coverage.md). All input parameter
-names are normalised to `snake_case` for consistency with the curated
-layer.
-
-## Resources
-
-Seven MCP resources for hosts that pre-fetch context:
-
-| URI | Purpose |
-|---|---|
-| `action1://me` | The authenticated identity / role / permissions. Use this as a startup probe to know which tool families will 403. |
-| `action1://orgs` | All visible organizations. |
-| `action1://templates` | Action template catalog. |
-| `action1://reports` | Report catalog. |
-| `action1://endpoints/{orgId}` | Live endpoint snapshot per org. Pass `default` to use `ACTION1_ORG_ID`. |
-| `action1://groups/{orgId}` | Endpoint groups. |
-| `action1://vulnerabilities/{orgId}` | Org-wide CVE rollup. May 403 if the role lacks `view_vulnerabilities`. |
-
-All list-shaped resources are capped at ~400 KB and emit a truncation
-note when the cap fires; the equivalent paginated tool gives unbounded
-data via cursor chaining.
-
-## Slash-prompts
-
-Six host-surfaced workflows for the most common day-to-day jobs:
-
-| Prompt | Args | What it does |
-|---|---|---|
-| `/patch-windows-fleet` | `group_query` | Resolves the group, lists missing updates, previews and (after confirmation) deploys. |
-| `/audit-vulnerabilities` | `top_n?` | Surveys org-wide vulnerabilities, ranks the worst, presents a remediation plan. |
-| `/triage-offline-endpoints` | `stale_minutes?` | Walks the inventory, surfaces endpoints whose `status` or `last_seen` are stale. |
-| `/run-script-fleetwide` | `group_query`, `script_text` | Validates the script is read-only, dispatches via OS-aware routing, streams output. |
-| `/software-inventory-sweep` | `software_name` | Searches every endpoint's installed software for a substring match. |
-| `/check-my-permissions` | — | Reads `action1://me` and reports which tool families will 403 with the current role. |
+Every remaining Action1 API operation as a verb-first snake_case tool;
+input parameter names are normalised to `snake_case`. See
+[`docs/api-coverage.md`](docs/api-coverage.md).
 
 ## Destructive guard
 
-Every tool flagged `destructiveHint: true` enforces three independent gates:
+A tool flagged `destructiveHint: true` executes only when all of these
+hold:
 
 ```
-ACTION1_ALLOW_DESTRUCTIVE=true   ← server env, restart-required
-        AND
-confirm: "YES"                    ← exact, case-sensitive
-        AND
-dry_run: false                    ← default is true → preview-only
+ACTION1_ALLOW_DESTRUCTIVE=true    server env, restart required
+ACTION1_ALLOW_ACCOUNT_OPS=true    server env, only for account operations
+confirm: "YES"                    per call, exact (waived by auto-confirm)
+dry_run: false                    per call, the default is true (preview)
 ```
 
 ```jsonc
 // Preview only (default)
 { "tool": "action1_run_powershell",
   "arguments": { "endpoint_id": "<uuid>", "script_text": "Get-Date" } }
-// → returns { "dry_run": true, "would_send": { method, path, body } }
+// -> { "dry_run": true, "would_send": { method, path, body } }
 
-// Actually execute (server env: ACTION1_ALLOW_DESTRUCTIVE=true)
+// Execute (server env: ACTION1_ALLOW_DESTRUCTIVE=true)
 { "tool": "action1_run_powershell",
   "arguments": { "endpoint_id": "<uuid>", "script_text": "Get-Date",
                  "dry_run": false, "confirm": "YES" } }
 ```
 
-Single-operator setups can opt into `ACTION1_DESTRUCTIVE_AUTO_CONFIRM=true`,
-which waives only the per-call `confirm: "YES"` requirement — `dry_run`
-still defaults to `true`, so a bare call is still a preview; pass
-`dry_run: false` to execute. The env switch is still required, and the
-server logs a loud warning at start-up when this mode is on.
-
-See [`docs/SECURITY.md`](docs/SECURITY.md) for the full threat model.
+`confirm` and `dry_run` are arguments the model sets itself. They stop
+accidents, not a model that follows instructions hidden in Action1 data
+(hostnames, script output, audit texts). The controls that hold against
+that are the ones the model cannot change: the environment switches,
+`ACTION1_ALLOWED_ORG_IDS`, `ACTION1_TOOLSETS=read`, the role of the API
+credential, and your MCP host's per-tool approval. Do not "always allow"
+destructive tools in your host. See [`docs/SECURITY.md`](docs/SECURITY.md)
+for the threat model.
 
 ## Examples
 
-Three quick workflows; many more in [`docs/EXAMPLES.md`](docs/EXAMPLES.md):
+More in [`docs/EXAMPLES.md`](docs/EXAMPLES.md):
 
 ```text
 # 1. Fleet health check
 > "How many endpoints are online and how many need a reboot?"
+  agent -> action1_endpoints_summary
 
-  agent → action1_endpoints_summary
-  result → { total: 1247, fresh_last_seen: 1130, reboot_required: 38, ... }
+# 2. Read-only PowerShell on one Windows host
+> "What's the OS build of <hostname>? Run Get-ComputerInfo OsBuildNumber."
+  agent -> action1_search_endpoints { query: "<hostname>", fields: ["hostname"] }
+  agent -> action1_run_powershell { endpoint_id: <uuid>,
+             script_text: "Get-ComputerInfo OsBuildNumber",
+             dry_run: false, confirm: "YES" }
+  agent -> action1_wait_for_automation { instance_id: <id>, endpoint_id: <uuid> }
 
-# 2. Run a read-only PowerShell on a specific Win11 host
-> "What's the OS build of <hostname>? Run `Get-ComputerInfo OsBuildNumber`."
-
-  agent → action1_search_endpoints { query: "<hostname>", fields: ["hostname"] }
-  agent → action1_run_powershell {
-            endpoint_id: <uuid>,
-            script_text: "Get-ComputerInfo OsBuildNumber",
-            dry_run: false, confirm: "YES" }
-  agent → action1_wait_for_automation { instance_id: <id>, endpoint_id: <uuid> }
-
-# 3. Build a CVE remediation plan
+# 3. CVE remediation plan
 > "What's needed to remediate CVE-2024-XXXX?"
-
-  agent → action1_cve_remediation_plan { cve_id: "CVE-2024-XXXX" }
-  result → { plan: [{ cve, affected_endpoints, candidate_packages }], ... }
-  agent → action1_deploy_update { ... } (after operator confirmation)
+  agent -> action1_cve_remediation_plan { cve_id: "CVE-2024-XXXX" }
+  agent -> action1_deploy_update { ... }   (after operator confirmation)
 ```
 
 ## Rate limits
 
-Action1's REST API does not publish a hard rate-limit ceiling. In
-practice we observe ~10 requests per second sustained without 429s on
-the EU instance. If you do hit 429:
+Action1 does not publish a rate limit. During development about 10
+requests per second on the EU instance did not trigger HTTP 429; that is
+an observation, not a guarantee. If Action1 answers 429:
 
-- The retry wrapper honours `Retry-After` automatically.
-- Token-bucket-style throttling on `auto_paginate` calls keeps a
-  multi-page list walk under ~5 RPS.
-- For mass-fan-out actions, prefer `target_type: "EndpointGroup"` over
-  individual per-endpoint POSTs — Action1 fans out server-side.
+- The client honours `Retry-After` (capped at 60 s), for reads and
+  mutations alike, because a 429 means the request was not processed.
+- For mass actions prefer `target_type: "EndpointGroup"` over one call per
+  endpoint; Action1 fans out server-side.
 
-The server does NOT pre-emptively cache list responses; consecutive
-calls always hit the API. See [`src/client/retry.ts`](src/client/retry.ts)
-for the retry policy.
+The server has no outgoing throttle and does not cache list responses.
+The retry policy is in [`src/client/action1Client.ts`](src/client/action1Client.ts).
 
 ## Required Action1 permissions
 
-The MCP server's tool surface respects whatever role the API key
-carries. Common scopes:
-
-| Tool family | Required permission |
-|---|---|
-| Discovery (orgs, endpoints, templates, automations) | `view_endpoints`, `view_organizations`, `view_action_templates` |
-| Software inventory | `view_installed_software` |
-| Missing updates | `view_endpoints` (often suffices) |
-| Vulnerabilities | `view_vulnerabilities` (commonly missing on automation-only keys) |
-| Audit log | `view_audit` |
-| Reports | `view_reports` |
-| Execute scripts / deploy / reboot | `manage_actions`, `manage_endpoints` |
-| Manage schedules | `manage_schedules` |
-
-Use `action1://me` or the `/check-my-permissions` slash prompt to
-confirm what the configured key can do *before* the agent starts
-attempting destructive operations.
+The tools can only do what the role of the API credential allows.
+[`docs/permissions.md`](docs/permissions.md) lists the permission each
+operation needs, generated from the permission tags in the pinned spec.
+Grant only what the tools you use need. Read `action1://me` or run the
+`/check-my-permissions` prompt to see what the configured credential can
+do before an agent tries a destructive operation.
 
 ## Documentation
 
 | File | What it covers |
 |---|---|
-| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Step-by-step for every supported MCP host, plus install FAQ. |
-| [`docs/FAQ.md`](docs/FAQ.md) | Cross-topic FAQ + how-to recipes. |
-| [`docs/USAGE.md`](docs/USAGE.md) | Tool reference for curated + wrapper layers, plus Resources, Prompts, output-format, cancellation, logging. |
-| [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | End-to-end recipes (patching, triage, CVE remediation, etc.). |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | stdio / HTTP / systemd / MCPB / Cloudflare Workers, plus the production checklist. |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | Threat model, destructive guard, credential rotation, redaction, rate limits. |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Step-by-step setup for every supported MCP host. |
+| [`docs/USAGE.md`](docs/USAGE.md) | Tool reference for the curated and wrapper layers, resources, prompts, output format, cancellation, logging. |
+| [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | End-to-end recipes (patching, triage, CVE remediation). |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | stdio, HTTP behind a reverse proxy, systemd, MCPB, production checklist. |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Threat model, destructive guard, data flow to the LLM, reporting vulnerabilities. |
+| [`docs/permissions.md`](docs/permissions.md) | Action1 permission per operation and tool (generated). |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Common failure modes and fixes. |
-| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Codegen workflow, test layout, commit conventions. |
-| [`docs/api-coverage.md`](docs/api-coverage.md) | The full operation-to-tool mapping (166 tools over the pinned spec). |
-| [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md) | Cross-repo comparison and capability gaps. |
+| [`docs/FAQ.md`](docs/FAQ.md) | Questions across topics. |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Development setup, codegen workflow, tests, pull requests. |
+| [`docs/api-coverage.md`](docs/api-coverage.md) | How spec operations map to tools; full table in [`docs/_coverage_table.md`](docs/_coverage_table.md). |
+| [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md) | What the server does not cover, or covers only with a caveat. |
+| [`docs/GOTCHAS.md`](docs/GOTCHAS.md) | Action1 API quirks and the undocumented endpoints the curated tools use. |
+| [`docs/adr/`](docs/adr/README.md) | Architecture decision records. |
 | [`docs/403-investigation.md`](docs/403-investigation.md) | Why `/general` is not a real path. |
-| [`evals/`](evals/) | Skill-format evaluation suite (12 multi-hop questions, harness-runnable). |
-| [`TESTING.md`](TESTING.md) | Unit / integration / security / performance tests, smoke tests, live-run results (anonymised). |
+| [`evals/`](evals/README.md) | Evaluation questions for an LLM-driven harness. |
+| [`TESTING.md`](TESTING.md) | Test layers and the live-run record. |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes. |
 
 ## Development
 
 ```bash
 npm run dev               # tsx watch (stdio)
-npm run typecheck
+npm run typecheck         # source
+npm run typecheck:tests   # tests (tsconfig.test.json)
 npm run lint
-npm test                  # 527 tests across all categories
-npm run test:unit         # 37 files
-npm run test:integration  # MCP-protocol round-trip tests
-npm run test:security     # destructive-guard truth table, redaction matrix
-npm run test:performance  # capItemList / markdownTable scaling
+npm test                  # all test categories
+npm run test:unit
+npm run test:integration  # MCP protocol round trips
+npm run test:security     # destructive-guard truth table, redaction
+npm run test:performance  # size limits and rendering at scale
+npm run test:coverage     # tests with the coverage thresholds from vitest.config.ts
+npm run test:e2e          # builds the MCPB bundle, starts the built servers over stdio
+npm run check             # lint, both typechecks, format check, tests (what CI gates on)
 npm run codegen           # regenerate src/tools/generated/index.ts from the spec
+npm run spec:check        # compare the pinned spec with the one Action1 serves
 npm run inspector         # MCP Inspector against the built stdio server
 ```
 
-The macOS payload-builder unit tests are intentionally strict — they
-protect against silent regressions of the reverse-engineered field set.
-If you change the payload, update the snapshot.
+The macOS payload-builder tests are deliberately strict: they protect the
+reverse-engineered field set. If you change the payload, update the test.
 
 ## Roadmap
 
-Tracked in [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md) §
-"Recommended second-wave roadmap":
+Open candidates (see also
+[`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md)):
 
-- Endpoint groups CRUD + targeting (mostly delivered via auto-gen + the
-  `target_type` parameter on curated tools).
-- Reports surface (delivered via the auto-gen + `action1_report_export`
-  wrapper).
-- Software inventory per endpoint (delivered via
-  `action1_software_inventory_for_endpoint`).
-- CVE-based remediation builder (delivered via
-  `action1_cve_remediation_plan`).
-- Recurring automations CRUD (delivered via auto-gen).
-
-Open candidates:
-
-- Streamable HTTP "Sampling" / "Elicitation" support if user demand
-  appears.
-- Cloudflare Workers reference deployment.
-- Bundle the generated `_coverage_table.md` into the npm package.
+- Publish to npm with provenance.
+- Live validation of the destructive tools listed under
+  [Validation status](#validation-status) on a test endpoint.
+- A Cloudflare Workers deployment of the HTTP transport.
 
 ## Security
 
-See [`docs/SECURITY.md`](docs/SECURITY.md). Report vulnerabilities via the
-private security advisory at
-<https://github.com/mguttmann/action1-mcp/security/advisories/new>.
+See [`docs/SECURITY.md`](docs/SECURITY.md). Report vulnerabilities through
+a private security advisory at
+<https://github.com/mguttmann/action1-mcp/security/advisories/new>, not in
+a public issue.
 
 ## License
 
-[MIT](LICENSE) © 2026 mguttmann
+[MIT](LICENSE) © 2026 mguttmann, with one exception: the vendored Action1
+API specification in `src/codegen/spec/openapi.json` belongs to Action1
+Corporation and is not covered by the MIT License. See [`NOTICE`](NOTICE).
 
 ## Acknowledgements
 
-- The Action1 team for shipping a clean OpenAPI bundle.
 - The MCP community at <https://modelcontextprotocol.io>.
-- The Anthropic
+- Anthropic's
   [`mcp-builder`](https://github.com/anthropics/skills/tree/main/skills/mcp-builder)
-  skill, whose Quality Checklist this server follows.
-- The four sibling projects whose code I read while scoping this one:
+  guide, which shaped the tool design and the evaluation format.
+- The other open-source Action1 integrations whose code I read while
+  scoping this one, in particular
   [`dimer47/action1-cli`](https://github.com/dimer47/action1-cli),
-  [`pts211/action1-mcp-server`](https://github.com/pts211/action1-mcp-server),
-  [`ghively/Action1MCP`](https://github.com/ghively/Action1MCP),
-  [`DavidS-GPC/mcp-action1`](https://github.com/DavidS-GPC/mcp-action1).
-  Cross-repo notes in
-  [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md).
+  [`pts211/action1-mcp-server`](https://github.com/pts211/action1-mcp-server)
+  and [`ghively/Action1MCP`](https://github.com/ghively/Action1MCP).

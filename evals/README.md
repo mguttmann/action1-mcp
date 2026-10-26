@@ -1,35 +1,36 @@
-# action1-mcp-server — Evaluation Suite
+# action1-mcp-server: evaluation suite
 
-This directory contains the skill-format evaluation suite for the MCP
-server. It follows the official Anthropic
-[`mcp-builder` skill](https://github.com/anthropics/skills/blob/main/skills/mcp-builder/reference/evaluation.md)
-format, where each `<qa_pair>` has a single question and a single
-verifiable answer.
+This directory contains an evaluation suite for the MCP server in the
+format of Anthropic's
+[`mcp-builder` evaluation guide](https://github.com/anthropics/skills/blob/main/skills/mcp-builder/reference/evaluation.md):
+each `<qa_pair>` has one question and one verifiable answer.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `action1-eval.xml` | 12 multi-hop, tool-only-verifiable questions exercising the MCP tools. Every answer is a stable Action1 platform fact — no operator-specific data. |
+| `action1-eval.xml` | Multi-hop questions that can only be answered by calling the MCP tools. Every answer is a stable Action1 platform fact, no operator-specific data. |
 
 ## Question categories
 
-All 12 questions are platform-stable: the answer is a fact of Action1
+All questions are platform-stable: the answer is a fact of Action1
 itself (template ids, schema field names, parameter values for the
 `run_script` payload, status-marker filter words, the four detected
 platform values). They pass against any real Action1 instance without
 operator-specific snapshots.
 
-The earlier "OPERATOR-FILL-IN-FROM-ENV" placeholder approach was
-removed in v0.3 because the skill's harness uses direct string
-comparison and dynamic answers are inherently incompatible with that
-contract. If you want org-specific evaluation questions, fork the XML
-and add them as a separate suite — keep `action1-eval.xml` portable.
+The harness compares answers as strings, so answers that depend on a
+tenant's data cannot be part of this file. If you want org-specific
+questions, fork the XML and keep them in a separate suite;
+`action1-eval.xml` stays portable.
 
 ## Running the harness
 
-The Anthropic skill ships a `scripts/evaluation.py` harness. Install it
-via `pip install -r scripts/requirements.txt` (anthropic + mcp).
+The harness is `scripts/evaluation.py` in Anthropic's `mcp-builder`
+repository (linked above), not part of this project. Install its
+requirements with `pip install -r scripts/requirements.txt` (anthropic +
+mcp). Running it needs a live Action1 tenant, a read-only credential and
+an Anthropic API key, and it costs API usage.
 
 ```bash
 python scripts/evaluation.py \
@@ -51,22 +52,29 @@ The harness:
    string comparison.
 5. Writes a Markdown report with pass/fail, per-task duration, tool calls.
 
+## Status
+
+The evaluation is not part of CI and no run result is committed. It is a
+tool for checking tool descriptions against a real tenant before a
+release. Schema and registration problems are caught without a tenant by
+the test suite (`tests/integration/`), which calls the tools through MCP
+with mocked Action1 responses.
+
 ## Scoring guidelines
 
-A perfect score is 10/10. Realistic targets:
+The score is the share of questions answered correctly. Rough targets:
 
-- 9-10/10: server is publication-ready.
-- 7-8/10: investigate failed pairs; usually a tool description gap or
-  missing schema field.
-- ≤6/10: tool layer needs review (descriptions, examples, error messages).
+- 90 % or more: the tool layer works for an agent.
+- 70 to 89 %: look at the failed questions; usually a tool description
+  gap or a missing schema field.
+- Below 70 %: review descriptions, examples and error messages.
 
-The skill explicitly notes the *agent's feedback* in the report is more
-valuable than the raw score — treat low scores as a prompt to improve
-descriptions and add examples, not as a rejection.
+The agent's feedback in the report is more useful than the raw score:
+treat low scores as a prompt to improve descriptions and add examples.
 
 ## Adding more questions
 
-Stick to the skill's six rules:
+Follow these rules from the evaluation guide:
 
 1. **Independent**: no question depends on the answer of another.
 2. **Read-only**: never invokes destructive tools.

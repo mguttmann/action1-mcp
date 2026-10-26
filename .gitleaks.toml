@@ -1,0 +1,18 @@
+# gitleaks configuration: the default rule set plus documented false-positive
+# exclusions. Run: gitleaks git . (history) or gitleaks dir . (working tree).
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Vendor example values (client IDs, client_secret, tokens, passwords) in the vendored Action1 OpenAPI spec; see src/codegen/spec/SOURCE.md"
+paths = ['''^src/codegen/spec/openapi\.json$''']
+
+[[allowlists]]
+description = "Deliberate fake secrets in the redaction and config tests: a JWT with payload {\"sub\":\"test-user\"} and signature 'signaturesignaturesignature', and hex placeholders starting with abcdef0123 or abcdef1234. Matched by value, so reformatting a test does not reopen a finding."
+condition = "AND"
+paths = ['''^tests/''']
+regexTarget = "match"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJ0ZXN0LXVzZXIifQ\.signaturesignaturesignature''',
+  '''abcdef(?:0123|1234)[0-9a-f]*''',
+]

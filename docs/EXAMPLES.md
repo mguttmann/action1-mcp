@@ -47,7 +47,7 @@ For a more targeted call:
 ```
 
 `Get-Date`, `Get-ComputerInfo`, `Get-CimInstance`, `Get-Service`,
-`Get-Process`, `Get-WinEvent` are all read-only — no `Set-*` /
+`Get-Process`, `Get-WinEvent` are all read-only - no `Set-*` /
 `Stop-*` / `New-*` / `Remove-*` cmdlets.
 
 ## 3. Same on macOS
@@ -143,11 +143,13 @@ subset first and then iterate.
 }
 ```
 
-`target_type: "EndpointGroup"` is supported on every curated execution
-tool: `action1_run_powershell`, `action1_run_bash_macos`,
-`action1_reboot_endpoint`, `action1_deploy_update`, `action1_deploy_package`,
-`action1_uninstall_program`, `action1_run_data_collection`,
-`action1_execute_and_wait`.
+`target_type: "EndpointGroup"` is supported on these curated execution
+tools: `action1_run_powershell`, `action1_run_bash_macos`,
+`action1_run_script` (with `os: "windows"` or `os: "macos"`, required for
+groups), `action1_reboot_endpoint`, `action1_deploy_update`,
+`action1_deploy_package`, `action1_uninstall_program`,
+`action1_run_data_collection`. `action1_execute_and_wait` targets a single
+endpoint only.
 
 ## 7. Build a CVE remediation plan
 
@@ -160,19 +162,24 @@ tool: `action1_run_powershell`, `action1_run_bash_macos`,
 }
 ```
 
-Returns `{ plan: [{ cve, affected_endpoints: [...], candidate_packages: [...] }] }`.
-The plan is **read-only** — pass `candidate_packages[*].id` and `version`
-into `action1_deploy_update` to act on it.
+Returns `{ plan: [{ cve, affected_endpoints: [...], candidate_packages: [...], correlation }] }`.
+`correlation: "cve"` means the packages are the updates Action1 lists for
+the CVE. The plan is **read-only** - pass `candidate_packages[*].id` and
+`version` into `action1_deploy_update` to act on it.
 
-## 8. Audit who deployed what last week
+## 8. Audit who changed what last week
+
+API writes appear in the audit log as `POST`, `PATCH` or `DELETE` events;
+the target filter matches the affected object, its URL or the description.
 
 ```jsonc
 {
   "tool": "action1_audit_log_search",
   "arguments": {
     "from_time": "2026-04-26T00:00:00Z",
-    "to_time": "2026-05-03T00:00:00Z",
-    "event_type_substring": "deploy"
+    "to_time": "2026-05-03_00-00-00",
+    "event_type_substring": "post",
+    "target_substring": "automations"
   }
 }
 ```
@@ -214,10 +221,10 @@ The response includes `connectivity.online` and a human-readable
 
 ```jsonc
 // 1. Find the script id
-{ "tool": "action1_list_scripts", "arguments": { "limit": 200 } }
+{ "tool": "action1_list_scripts", "arguments": {} }
 
 // 2. Use the auto-generated POST to /automations/instances/{org} for the
-//    library-script template. Body shape comes from the spec — preview
+//    library-script template. Body shape comes from the spec - preview
 //    first, then submit with confirm.
 {
   "tool": "action1_create_automation_instance",
@@ -278,7 +285,7 @@ batches, library scripts, MatchingFilters scope deploys, UpdateRing template).
 > "What permissions do I have on this Action1 instance?"
 
 ```jsonc
-// Resource read (preferred — most hosts pre-fetch this)
+// Resource read (preferred - most hosts pre-fetch this)
 { "method": "resources/read",
   "params": { "uri": "action1://me" } }
 
@@ -309,13 +316,13 @@ with the destructive guard satisfied.
 ```
 
 Reads `action1://vulnerabilities/default`, ranks by severity + endpoint
-count, builds a remediation plan via `action1_cve_remediation_plan` —
+count, builds a remediation plan via `action1_cve_remediation_plan` -
 no execution, just a Markdown table you can act on later.
 
 ## Tips for prompting the model
 
 - **Always be specific about the target.** "Reboot the QA jumphost" is
-  better than "reboot a server" — the model will (correctly) refuse to
+  better than "reboot a server" - the model will (correctly) refuse to
   guess.
 - **Ask for `dry_run: true` first** when you're not sure. It returns the
   exact payload the server would send.
