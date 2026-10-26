@@ -194,8 +194,9 @@ Glama's tool inspection runs the server in a container built from a
 form in the listing's admin area (Node.js version, build steps, start
 command, an environment JSON schema and placeholder values), not from a
 file in the repository. The server answers `tools/list` without calling
-the Action1 API, so placeholder values are enough; never enter a real
-API credential there.
+the Action1 API, so placeholders are enough (an `https://` URL for
+`ACTION1_BASE_URL`, any non-empty client ID and secret); never enter a
+real API credential there.
 
 ## Check the result
 
