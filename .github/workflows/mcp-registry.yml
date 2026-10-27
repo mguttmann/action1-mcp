@@ -134,7 +134,7 @@ jobs:
           version="$(jq -r .version server.json)"
           url="https://registry.npmjs.org/${ident}/${version}"
           # mcpName of the version on npm, empty when npm does not serve it.
-          lookup() { curl --silent --fail "$url" | jq -r '.mcpName // empty' || true; }
+          lookup() { curl --silent --fail --max-time 20 --retry 3 "$url" | jq -r '.mcpName // empty' || true; }
           found="$(lookup)"
           if [ "$NPM_PUBLISHED" = "true" ]; then
             # A fresh publish can take a few minutes to show up.

@@ -185,6 +185,8 @@ Any other stdio host takes the same command in its JSON configuration:
 }
 ```
 
+A configuration file with these values holds the credential: keep it
+readable for your user only and out of version control.
 `action1-mcp-server@<version>` pins a version. For Claude Desktop the
 MCPB bundle stays the recommended path: its wizard keeps the client ID
 and secret in Claude Desktop's secure storage. More hosts and options:
