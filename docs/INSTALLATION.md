@@ -60,11 +60,29 @@ npm run build
 `npm run build` compiles to `dist/` (TypeScript only; `npm run check`
 runs lint, typecheck, format check and the tests). `dist/index.js` is the entry point.
 
-### npm (not available yet)
+### Option C: npm (npx)
 
-The package is not published to npm. Do not install `action1-mcp-server`
-or a similarly named package from the registry; it would not be this
-project.
+The package is on npm as
+[`action1-mcp-server`](https://www.npmjs.com/package/action1-mcp-server);
+its command is `action1-mcp`. Install only that exact name: packages with
+similar names are not this project. With `npx` the MCP host fetches and
+starts it, so there is nothing to clone or build:
+
+```bash
+npx -y action1-mcp-server --help         # prints the version and the settings
+npx -y action1-mcp-server@<version> ...  # a pinned version
+```
+
+The settings come from the environment the MCP host passes to the
+process (the `env` block of its configuration, or `-e` for Claude Code);
+see [Claude Code](#claude-code-cli) and
+[generic stdio clients](#continuedev--cody--generic-stdio-clients). Steps
+2 and 3 below are for the source install.
+
+The same package is listed in the official
+[MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.mguttmann/action1-mcp`, next to the MCPB bundle. Hosts that
+install from the registry ask for the same environment variables.
 
 ## Step 2: Configure environment (source install)
 
@@ -119,6 +137,24 @@ npx -y @modelcontextprotocol/inspector@2.12.0 --cli \
 ## Step 4: Connect to your MCP host
 
 ### Claude Code (CLI)
+
+From npm (Option C): `-e` sets each environment variable for the server.
+Type the values in your own shell, never into a chat; Claude Code stores
+them in its configuration (`~/.claude.json` for the local and user
+scopes, `.mcp.json` in the repository for the project scope, so do not
+use the project scope with real credentials).
+
+```bash
+claude mcp add action1 \
+  -e ACTION1_BASE_URL=https://app.eu.action1.com/api/3.0 \
+  -e ACTION1_ORG_ID=<your-org-uuid> \
+  -e ACTION1_CLIENT_ID=<client-id> \
+  -e ACTION1_CLIENT_SECRET=<client-secret> \
+  -e ACTION1_ALLOWED_ORG_IDS=<your-org-uuid> \
+  -- npx -y action1-mcp-server
+```
+
+From source (Option B), with the `.env` file of Step 2:
 
 ```bash
 # stdio (recommended for local use)
@@ -256,7 +292,30 @@ Restart Cursor; the tools appear in the chat UI.
 
 ### Continue.dev / Cody / generic stdio clients
 
-Any MCP client that speaks stdio works. The command line is always:
+Any MCP client that speaks stdio works. From npm, the usual JSON
+configuration (`mcpServers` in Claude Desktop, Cursor and most other
+hosts) is:
+
+```json
+{
+  "mcpServers": {
+    "action1": {
+      "command": "npx",
+      "args": ["-y", "action1-mcp-server"],
+      "env": {
+        "ACTION1_BASE_URL": "https://app.eu.action1.com/api/3.0",
+        "ACTION1_ORG_ID": "<your-org-uuid>",
+        "ACTION1_CLIENT_ID": "<client-id>",
+        "ACTION1_CLIENT_SECRET": "<client-secret>",
+        "ACTION1_ALLOWED_ORG_IDS": "<your-org-uuid>"
+      }
+    }
+  }
+}
+```
+
+This file then holds the credential: keep it readable for your user
+only and out of version control. From source, the command line is:
 
 ```bash
 node --env-file=/abs/path/.env /abs/path/dist/index.js
@@ -289,6 +348,11 @@ organization. If not:
 
 ## Updating
 
+npx keeps a fetched version in its cache. To move an npx setup to the
+newest release, use `action1-mcp-server@latest` in the host's command
+once (or pin `action1-mcp-server@<version>`) and restart the host. For a
+source install:
+
 ```bash
 cd action1-mcp
 git pull
@@ -309,7 +373,7 @@ explains how to adopt a new spec.
 
 - Remove the server entry from your MCP host's configuration (or the
   extension from Claude Desktop).
-- Delete the cloned repository.
+- Delete the cloned repository (source install).
 - Revoke the API credential in the Action1 console if you no longer need
   it.
 
@@ -321,8 +385,10 @@ explains how to adopt a new spec.
 
 1. **MCPB bundle (Claude Desktop only)**: download the `.mcpb` from the
    GitHub Release and double-click it. No terminal needed.
-2. **Clone and build**: needed for every other host, and to run a version
-   ahead of the latest release.
+2. **npm (`npx -y action1-mcp-server`)**: any stdio host, no clone or
+   build; needs Node.js.
+3. **Clone and build**: to run a version ahead of the latest release, or
+   to change the code.
 
 ### Does the server stay running, or does it start per call?
 

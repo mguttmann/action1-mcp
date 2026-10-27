@@ -141,7 +141,12 @@ describe("release.yml", () => {
 });
 
 describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
-  const pkg = JSON.parse(read("package.json")) as { version: string; repository: { url: string } };
+  const pkg = JSON.parse(read("package.json")) as {
+    name: string;
+    version: string;
+    mcpName: string;
+    repository: { url: string };
+  };
   const server = JSON.parse(read("server.json")) as {
     $schema: string;
     name: string;
@@ -151,11 +156,12 @@ describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
       registryType: string;
       identifier: string;
       version: string;
-      fileSha256: string;
+      fileSha256?: string;
       transport: { type: string };
       environmentVariables: { name: string; isSecret?: boolean }[];
     }[];
   };
+  const byType = (type: string) => server.packages.filter((p) => p.registryType === type);
   const manifest = JSON.parse(read("mcpb/manifest.json")) as {
     server: { mcp_config: { env: Record<string, string> } };
   };
@@ -167,9 +173,8 @@ describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
     expect(server.name).toBe("io.github.mguttmann/action1-mcp");
     expect(server.version).toBe(pkg.version);
     expect(pkg.repository.url).toContain(server.repository.url.replace("https://", ""));
-    expect(server.packages).toHaveLength(1);
-    const [p] = server.packages;
-    expect(p!.registryType).toBe("mcpb");
+    expect(server.packages.map((p) => p.registryType).sort()).toEqual(["mcpb", "npm"]);
+    const [p] = byType("mcpb");
     expect(p!.version).toBe(pkg.version);
     expect(p!.identifier).toBe(
       `${server.repository.url}/releases/download/v${pkg.version}/action1-mcp-${pkg.version}.mcpb`,
@@ -178,13 +183,30 @@ describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
     expect(p!.transport.type).toBe("stdio");
   });
 
-  it("declares exactly the environment of the bundle, credentials as secrets", () => {
-    const env = server.packages[0]!.environmentVariables;
-    expect(env.map((e) => e.name).sort()).toEqual(
-      Object.keys(manifest.server.mcp_config.env).sort(),
-    );
-    const secrets = env.filter((e) => e.isSecret).map((e) => e.name);
-    expect(secrets.sort()).toEqual(["ACTION1_CLIENT_ID", "ACTION1_CLIENT_SECRET"]);
+  it("lists the npm package under its package.json name, version and mcpName", () => {
+    // The registry accepts the npm entry only when npm serves this version
+    // with an mcpName equal to the server name.
+    expect(pkg.mcpName).toBe(server.name);
+    const [p] = byType("npm");
+    expect(p!.identifier).toBe(pkg.name);
+    expect(p!.version).toBe(pkg.version);
+    expect(p!.transport.type).toBe("stdio");
+    expect(p!.fileSha256).toBeUndefined();
+  });
+
+  it("declares exactly the environment of the bundle in every package, credentials as secrets", () => {
+    for (const p of server.packages) {
+      const env = p.environmentVariables;
+      expect(env.map((e) => e.name).sort(), p.registryType).toEqual(
+        Object.keys(manifest.server.mcp_config.env).sort(),
+      );
+      const secrets = env.filter((e) => e.isSecret).map((e) => e.name);
+      expect(secrets.sort(), p.registryType).toEqual([
+        "ACTION1_CLIENT_ID",
+        "ACTION1_CLIENT_SECRET",
+      ]);
+    }
+    expect(byType("npm")[0]!.environmentVariables).toEqual(byType("mcpb")[0]!.environmentVariables);
   });
 
   it("is published by release.yml after the GitHub release, through OIDC", () => {
@@ -192,6 +214,11 @@ describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
     expect(job).toMatch(/needs: \[?[^\n]*\bgithub-release\b/);
     expect(job).toContain("uses: ./.github/workflows/mcp-registry.yml");
     expect(job).toContain("id-token: write");
+    // The registry checks the npm version, so the listing waits for the
+    // publish; a skipped publish (publishing off) must not block it.
+    expect(job).toMatch(/needs: \[?[^\n]*\bnpm-publish\b/);
+    expect(job).toContain("needs.npm-publish.result == 'skipped'");
+    expect(job).toContain("npm-published: ${{ needs.npm-publish.result == 'success' }}");
     expect(registry).toMatch(/^ {2}workflow_call:/m);
     expect(registry).toMatch(/^ {2}workflow_dispatch:/m);
   });
@@ -210,6 +237,15 @@ describe("MCP Registry listing (server.json, mcp-registry.yml)", () => {
     expect(after(run, "SHA256SUMS")).toBeGreaterThanOrEqual(0);
     expect(after(run, "./mcp-publisher login github-oidc", extract)).toBeGreaterThan(extract);
     expect(after(run, "./mcp-publisher publish", extract)).toBeGreaterThan(extract);
+  });
+
+  it("sets the npm version and drops the npm entry when npm does not serve it", () => {
+    const run = [...jobs(registry).values()].flatMap(runLines).join("\n");
+    expect(run).toContain('elif .registryType == "npm" then');
+    expect(run).toContain("https://registry.npmjs.org/${ident}/${version}");
+    expect(run).toContain(".mcpName // empty");
+    expect(run).toContain('.packages |= map(select(.registryType != "npm"))');
+    expect(registry).toMatch(/^ {6}npm-published:\n(?: {8}.*\n)* {8}type: boolean$/m);
   });
 });
 
@@ -279,6 +315,33 @@ describe("pinned tools", () => {
         });
     }
     expect(unpinned).toEqual([]);
+  });
+});
+
+describe("npm distribution in the docs", () => {
+  it("no document claims the package is unpublished or forbids installing it", () => {
+    const files = execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8" })
+      .split("\n")
+      .filter((f) => f && f !== "CHANGELOG.md");
+    const stale =
+      /not (?:yet )?published (?:to|on) npm|not on npm|publishing to npm is planned|npm \(not available|do not install `action1-mcp-server`|install anything named like this project from npm/i;
+    const hits: string[] = [];
+    for (const f of files) {
+      read(f)
+        .replace(/\s+/g, " ")
+        .split(/(?<=\.) /)
+        .forEach((sentence) => {
+          if (stale.test(sentence)) hits.push(`${f}: ${sentence.slice(0, 120)}`);
+        });
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it("README, INSTALLATION and CLAUDE.md name the npx command of the package", () => {
+    const pkg = JSON.parse(read("package.json")) as { name: string };
+    for (const f of ["README.md", "docs/INSTALLATION.md", "CLAUDE.md"]) {
+      expect(read(f), f).toContain(`npx -y ${pkg.name}`);
+    }
   });
 });
 

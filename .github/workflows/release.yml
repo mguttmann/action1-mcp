@@ -10,12 +10,14 @@ name: Release
 #   github-release  build provenance attestation (public repository) and
 #                   a new GitHub release; an existing release is never
 #                   overwritten
-#   mcp-registry    lists the release's .mcpb in the official MCP Registry
-#                   (mcp-registry.yml, GitHub OIDC); stable versions only
-#   npm-publish    publishes the tarball from the build job; stays off
+#   npm-publish     publishes the tarball from the build job; stays off
 #                   until the repository variable NPM_PUBLISH_ENABLED is
 #                   'true' and npm trusted publishing (OIDC) is configured
 #                   for this repository and workflow on npmjs.com
+#   mcp-registry    lists the release in the official MCP Registry
+#                   (mcp-registry.yml, GitHub OIDC); stable versions only;
+#                   runs after npm-publish, and lists the npm package only
+#                   when npm serves the version (the bundle always)
 # Repository settings that complete this (rulesets, required checks):
 # docs/maintainers/repo-settings.md.
 
@@ -145,18 +147,6 @@ jobs:
           gh release create "$TAG" release/*.mcpb release/*.tgz release/*.cdx.json \
             release/SHA256SUMS --verify-tag --title "$TAG" --generate-notes "${flags[@]}"
 
-  mcp-registry:
-    needs: [verify, github-release]
-    # Registry versions are permanent and the newest one is listed as
-    # latest, so prereleases stay out.
-    if: ${{ needs.verify.outputs.prerelease != 'true' }}
-    uses: ./.github/workflows/mcp-registry.yml
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      tag: ${{ github.ref_name }}
-
   npm-publish:
     needs: [verify, build, github-release]
     # Off until the owner sets the repository variable
@@ -200,3 +190,22 @@ jobs:
           # Trusted publishing (OIDC) needs no token and attaches
           # provenance.
           npm publish release/action1-mcp-server-*.tgz --provenance --access public --tag "$tag"
+
+  mcp-registry:
+    needs: [verify, github-release, npm-publish]
+    # Registry versions are permanent and the newest one is listed as
+    # latest, so prereleases stay out. The registry checks the npm
+    # version, so this waits for npm-publish; a skipped npm-publish
+    # (publishing off) does not block it, a failed one does.
+    if: >-
+      ${{ !cancelled()
+      && needs.verify.outputs.prerelease != 'true'
+      && needs.github-release.result == 'success'
+      && (needs.npm-publish.result == 'success' || needs.npm-publish.result == 'skipped') }}
+    uses: ./.github/workflows/mcp-registry.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      tag: ${{ github.ref_name }}
+      npm-published: ${{ needs.npm-publish.result == 'success' }}

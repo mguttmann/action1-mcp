@@ -1,6 +1,7 @@
 {
   "name": "action1-mcp-server",
-  "version": "0.6.0",
+  "mcpName": "io.github.mguttmann/action1-mcp",
+  "version": "0.6.1",
   "description": "Unofficial Model Context Protocol (MCP) server for the Action1 RMM REST API: curated and generated tools over the Action1 OpenAPI spec, a destructive-operation guard, stdio and Streamable HTTP transports, and an MCPB bundle. Not affiliated with Action1.",
   "license": "MIT",
   "author": "mguttmann (https://github.com/mguttmann)",

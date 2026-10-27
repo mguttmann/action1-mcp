@@ -19,7 +19,7 @@ changes off unless you switch them on.
 Every operation of the pinned Action1 OpenAPI snapshot is reachable
 through a tool (see [What is covered](#what-is-covered)). The server
 speaks stdio and Streamable HTTP and ships as an MCPB bundle for Claude
-Desktop. Releases and their changes: [`CHANGELOG.md`](CHANGELOG.md).
+Desktop and as the npm package `action1-mcp-server`. Releases and their changes: [`CHANGELOG.md`](CHANGELOG.md).
 
 ### Validation status
 
@@ -110,10 +110,11 @@ troubleshooting: [`docs/INSTALLATION.md`](docs/INSTALLATION.md#claude-desktop-ma
 
 ### MCP Registry
 
-The release workflow lists the bundle of each stable release in the
-official [MCP Registry](https://registry.modelcontextprotocol.io) as
-`io.github.mguttmann/action1-mcp` (download URL and SHA-256 of the
-release asset, the environment variables of the bundle). MCP hosts and
+The release workflow lists each stable release in the official
+[MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.mguttmann/action1-mcp`: the bundle (download URL and SHA-256
+of the release asset) and, from 0.6.1 on, the npm package
+`action1-mcp-server`, both with the same environment variables. MCP hosts and
 directories that read the registry can install it from there. Only that
 name is this project; Action1 servers under other namespaces are
 different code.
@@ -145,11 +146,49 @@ claude mcp add action1 -- node --env-file=$(pwd)/.env $(pwd)/dist/index.js
 config, Claude.ai, Cursor, Continue.dev, Cody) are covered in
 [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
-### npm
+### npm (npx, any stdio MCP host)
 
-Publishing to npm is planned but has not happened yet. There is no
-official npm package, so do not install `action1-mcp-server` or any
-similarly named package from the registry: it would not be this code.
+The server is published on npm as
+[`action1-mcp-server`](https://www.npmjs.com/package/action1-mcp-server)
+(command `action1-mcp`). Only that exact name is this project. `npx`
+fetches and runs it, so no clone or build is needed; Node.js 22.12 or
+newer must be installed.
+
+Attach it to Claude Code (the values land in Claude Code's own
+configuration; type them in your shell, never into a chat):
+
+```bash
+claude mcp add action1 \
+  -e ACTION1_BASE_URL=https://app.eu.action1.com/api/3.0 \
+  -e ACTION1_ORG_ID=<your-org-uuid> \
+  -e ACTION1_CLIENT_ID=<client-id> \
+  -e ACTION1_CLIENT_SECRET=<client-secret> \
+  -- npx -y action1-mcp-server
+```
+
+Any other stdio host takes the same command in its JSON configuration:
+
+```json
+{
+  "mcpServers": {
+    "action1": {
+      "command": "npx",
+      "args": ["-y", "action1-mcp-server"],
+      "env": {
+        "ACTION1_BASE_URL": "https://app.eu.action1.com/api/3.0",
+        "ACTION1_ORG_ID": "<your-org-uuid>",
+        "ACTION1_CLIENT_ID": "<client-id>",
+        "ACTION1_CLIENT_SECRET": "<client-secret>"
+      }
+    }
+  }
+}
+```
+
+`action1-mcp-server@<version>` pins a version. For Claude Desktop the
+MCPB bundle stays the recommended path: its wizard keeps the client ID
+and secret in Claude Desktop's secure storage. More hosts and options:
+[`docs/INSTALLATION.md`](docs/INSTALLATION.md#option-c-npm-npx).
 
 ## What is covered
 
@@ -474,7 +513,8 @@ reverse-engineered field set. If you change the payload, update the test.
 Open candidates (see also
 [`docs/api-coverage-gaps.md`](docs/api-coverage-gaps.md)):
 
-- Publish to npm with provenance.
+- npm releases with provenance from the release workflow (trusted
+  publisher configured; the first workflow publish is pending).
 - Live validation of the destructive tools listed under
   [Validation status](#validation-status) on a test endpoint.
 - A Cloudflare Workers deployment of the HTTP transport.

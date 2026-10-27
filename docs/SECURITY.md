@@ -45,7 +45,7 @@ you prefer not to be.
 | Credential exposure | Client secret ends up in chat transcripts, logs or the repo | The agent setup guide (`CLAUDE.md`) never asks for credentials in chat; the MCPB wizard stores them; logs and error texts are redacted; `.env` is git-ignored. |
 | Operator misconfiguration | Public bind without auth, typos in switches | The HTTP transport refuses to start without a token (or on a wildcard bind without `MCP_HTTP_ALLOWED_HOSTS`); invalid switch values abort startup; production checklist in [`DEPLOYMENT.md`](DEPLOYMENT.md). |
 | Supply-chain compromise | Token or payload theft through a dependency | Few runtime dependencies, lockfile, CI fails on high or critical advisories in runtime dependencies, Dependabot updates, secret scanning config for the repo. |
-| Look-alike packages | Someone publishes a package with a similar name | This project is not on npm yet; install only from this repository or its GitHub Releases. |
+| Look-alike packages | Someone publishes a package with a similar name | The npm package is `action1-mcp-server` (registry name `io.github.mguttmann/action1-mcp`); install only that exact name, this repository or its GitHub Releases. |
 
 ## Destructive guard
 

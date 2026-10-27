@@ -56,7 +56,9 @@ current LTS release (Node 22.12 or newer, or 24) from
 
 If the user only wants to install a released version, building is not
 needed: the `.mcpb` for each release is attached to the project's GitHub
-Releases page. Ask whether they prefer that before building.
+Releases page. Ask whether they prefer that before building. (The npm
+package `action1-mcp-server` is the path for other MCP hosts, not for
+this Claude Desktop setup.)
 
 ---
 
@@ -186,8 +188,12 @@ Extensions. Stored settings carry over; the wizard does not ask again.
   later in the Extensions UI.
 - **Do not** test tools that change state (run script, deploy, reboot)
   during verification. Stick to read-only calls.
-- **Do not** install anything named like this project from npm; it is
-  not published there.
+- **Do not** install any npm package except the exact name
+  `action1-mcp-server`; similarly named packages are not this project.
+  The npm path (`npx -y action1-mcp-server`, see
+  `docs/INSTALLATION.md`) is for hosts other than Claude Desktop; there,
+  too, the user types the credentials into their own shell or config
+  file, never into the chat.
 
 ---
 

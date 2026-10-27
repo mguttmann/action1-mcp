@@ -11,11 +11,22 @@ name: MCP Registry
 #                      retry a failed publish; the checkout is the branch
 #                      the run is started from (main)
 #
-# The package is the release's .mcpb asset. Version, download URL and
-# fileSha256 are taken from the release itself (tag and SHA256SUMS), and
-# the asset's bytes are checked against SHA256SUMS before publishing. A
-# registry version is permanent: when the version is already listed, the
-# run ends without publishing.
+# Packages: the release's .mcpb asset and the npm package
+# action1-mcp-server. Version, download URL and fileSha256 of the bundle
+# are taken from the release itself (tag and SHA256SUMS), and the asset's
+# bytes are checked against SHA256SUMS before publishing. The registry
+# accepts the npm entry only when npm serves that version with an
+# mcpName equal to the server name, so:
+#   npm-published true   the caller has just published the version to
+#                        npm (release.yml after npm-publish); the run
+#                        waits until npm serves it and fails if it never
+#                        does
+#   npm-published false  npm is checked once; when it does not serve the
+#                        version with the right mcpName (npm publishing
+#                        off), the npm entry is dropped and only the
+#                        bundle is listed
+# A registry version is permanent: when the version is already listed,
+# the run ends without publishing.
 #
 # Authentication is GitHub OIDC (no secret): the registry grants the
 # io.github.<repository owner>/* namespace. mcp-publisher comes from the
@@ -30,12 +41,22 @@ on:
         description: Release tag to list, e.g. v1.2.3
         required: true
         type: string
+      npm-published:
+        description: The version was just published to npm; wait for it
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       tag:
         description: Existing release tag to list, e.g. v1.2.3
         required: true
         type: string
+      npm-published:
+        description: Wait for npm to serve the version instead of dropping the npm entry
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -53,8 +74,7 @@ jobs:
       id-token: write
     env:
       TAG: ${{ inputs.tag }}
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
+      NPM_PUBLISHED: ${{ inputs.npm-published }}
       MCP_PUBLISHER_VERSION: v1.8.5
       MCP_PUBLISHER_SHA256: 2d151ac57275c9a6684d9d22b1cba81058bab195ea0a162e8fce3c6a5ec32812
     steps:
@@ -62,6 +82,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Point server.json at the release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -89,11 +112,46 @@ jobs:
           url="https://github.com/${GH_REPO}/releases/download/${TAG}/${asset}"
           jq --arg v "$version" --arg url "$url" --arg sha "$sha" '
             .version = $v
-            | .packages[0].version = $v
-            | .packages[0].identifier = $url
-            | .packages[0].fileSha256 = $sha
+            | .packages |= map(
+                if .registryType == "mcpb" then
+                  .version = $v | .identifier = $url | .fileSha256 = $sha
+                elif .registryType == "npm" then
+                  .version = $v
+                else error("unexpected package type \(.registryType)")
+                end)
           ' server.json > server.json.tmp
           mv server.json.tmp server.json
+      - name: Keep the npm package only when npm serves this version
+        run: |
+          set -euo pipefail
+          name="$(jq -r .name server.json)"
+          ident="$(jq -r '[.packages[] | select(.registryType == "npm")][0].identifier // empty' server.json)"
+          if [ -z "$ident" ]; then
+            echo "server.json lists no npm package."
+            cat server.json
+            exit 0
+          fi
+          version="$(jq -r .version server.json)"
+          url="https://registry.npmjs.org/${ident}/${version}"
+          # mcpName of the version on npm, empty when npm does not serve it.
+          lookup() { curl --silent --fail "$url" | jq -r '.mcpName // empty' || true; }
+          found="$(lookup)"
+          if [ "$NPM_PUBLISHED" = "true" ]; then
+            # A fresh publish can take a few minutes to show up.
+            for _ in $(seq 1 30); do
+              [ "$found" = "$name" ] && break
+              sleep 10
+              found="$(lookup)"
+            done
+            if [ "$found" != "$name" ]; then
+              echo "::error::npm does not serve ${ident}@${version} with mcpName ${name} (got '${found}')."
+              exit 1
+            fi
+          elif [ "$found" != "$name" ]; then
+            echo "::notice::npm does not serve ${ident}@${version} with mcpName ${name}; listing the bundle only."
+            jq '.packages |= map(select(.registryType != "npm"))' server.json > server.json.tmp
+            mv server.json.tmp server.json
+          fi
           cat server.json
       - name: Skip a version the registry already lists
         id: listed

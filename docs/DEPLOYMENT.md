@@ -8,14 +8,16 @@ install the **MCPB bundle**. Pick the section that matches your setup.
 
 | Use case | Recommended | Why |
 |---|---|---|
-| One person using Claude Code or Cursor on their workstation | **stdio** locally | No infrastructure; credentials stay on the user's machine. |
+| One person using Claude Code or Cursor on their workstation | **stdio** locally (`npx -y action1-mcp-server` or a source build) | No infrastructure; credentials stay on the user's machine. |
 | A team using Claude.ai or another remote MCP client | **Streamable HTTP** on loopback behind a TLS reverse proxy | One deployment, one credential to rotate. Every client shares that credential (not multi-tenant). |
 | Admins on Claude Desktop | **MCPB bundle** | Installed from a file; Claude Desktop asks for the settings and provides Node.js. |
 
 ## stdio (local)
 
-Each user clones and builds the repo and points their MCP host at
-`dist/index.js`. See [`INSTALLATION.md`](INSTALLATION.md).
+Each user points their MCP host at the npm package
+(`npx -y action1-mcp-server`, settings in the host's `env` block) or
+clones and builds the repo and points it at `dist/index.js`. See
+[`INSTALLATION.md`](INSTALLATION.md).
 
 ## Streamable HTTP (hosted)
 
@@ -213,7 +215,8 @@ install. The bundle contains no Node.js runtime and no credentials.
 
 - The `release.yml` workflow builds the bundle and attaches
   `action1-mcp-<version>.mcpb` to the GitHub Release of every `v*.*.*`
-  tag. For stable tags it also lists that asset in the official MCP
+  tag. For stable tags it also lists that asset (and the npm package
+  `action1-mcp-server`, when npm serves the version) in the official MCP
   Registry as `io.github.mguttmann/action1-mcp` (`mcp-registry.yml`).
 - Users double-click the file; Claude Desktop walks them through the
   settings.

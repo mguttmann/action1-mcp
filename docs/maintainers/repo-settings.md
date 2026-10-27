@@ -122,16 +122,29 @@ gh api -X PUT repos/{owner}/{repo}/automated-security-fixes
 
 ## 5. npm publishing
 
-Stays off until both are done:
+State on 2026-10-27: the package `action1-mcp-server` exists on npm
+(0.6.0, published by hand on 2026-10-27 without provenance), and the
+trusted publisher for this repository and workflow `release.yml` is
+configured. The trusted publisher is validated only by the first
+workflow publish: set `NPM_PUBLISH_ENABLED` to `true` before pushing the
+next release tag and check that the `npm-publish` job succeeds and the
+version on npmjs.com shows a provenance statement.
 
-- On npmjs.com, add a trusted publisher for the package: this
-  repository, workflow `release.yml`.
-- Set the repository variable `NPM_PUBLISH_ENABLED` to `true`.
+The workflow publishes only when both are done:
+
+- On npmjs.com, a trusted publisher for the package: this repository,
+  workflow `release.yml` (done).
+- The repository variable `NPM_PUBLISH_ENABLED` is `true`.
 
 The `npm-publish` job then publishes the tarball the `build` job packed,
-after the GitHub release exists, with provenance.
+after the GitHub release exists, with provenance. The `mcp-registry`
+job waits for it: the registry accepts the npm package of `server.json`
+only when npm serves that version with `mcpName`
+`io.github.mguttmann/action1-mcp` (from `package.json`). With the
+variable off, `npm-publish` is skipped and the registry entry lists the
+bundle only.
 
-Prerequisites, in this order:
+Prerequisites, in this order (steps 1 to 3 are done):
 
 1. **Public repository.** npm creates provenance statements only for
    packages built from a public source repository; a publish with
@@ -161,8 +174,8 @@ Prerequisites, in this order:
 The `mcp-registry` job of `release.yml` (stable tags only, after the
 GitHub release) runs `.github/workflows/mcp-registry.yml`, which can
 also be started by hand for an existing tag (Actions > MCP Registry >
-Run workflow, input `tag`). No repository setting and no secret is
-needed:
+Run workflow, inputs `tag` and `npm-published`). No repository setting
+and no secret is needed:
 
 - Authentication is GitHub OIDC (`id-token: write`); the registry grants
   the namespace `io.github.<repository owner>/*`.
@@ -170,6 +183,13 @@ needed:
   release (tag and `SHA256SUMS`) and checks the asset against
   `SHA256SUMS`; a version the registry already lists is skipped, because
   registry versions are permanent.
+- `server.json` lists two packages: the MCPB asset and the npm package
+  `action1-mcp-server`. The registry checks the npm version's `mcpName`
+  against the server name. The workflow keeps the npm entry only when
+  npm serves the version with that `mcpName`; after a publish in the
+  same run (`npm-published: true`) it waits for npm and fails if the
+  version does not appear. Versions before 0.6.1 have no `mcpName` on
+  npm, so a hand-started run for them lists the bundle only.
 - The MCPB asset must stay publicly downloadable: the registry checks
   the URL (GitHub release asset, `mcp` in the URL) when publishing.
 - `mcp-publisher` is pinned by version and SHA-256 in the workflow

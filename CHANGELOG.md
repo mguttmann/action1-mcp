@@ -8,8 +8,31 @@ first in each release.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-27
+
+Distribution release: the server is installable from npm and listed in
+the MCP Registry. No change to tools, settings or behaviour.
+
 ### Added
 
+- **npm distribution.** The package is on npm as `action1-mcp-server`
+  (0.6.0 was published by hand on 2026-10-27; from 0.6.1 on the release
+  workflow publishes with provenance once `NPM_PUBLISH_ENABLED` is set).
+  Any stdio MCP host can start it with `npx -y action1-mcp-server`,
+  Claude Code with
+  `claude mcp add action1 -e ACTION1_BASE_URL=... -- npx -y action1-mcp-server`.
+  The MCPB bundle stays the recommended path for Claude Desktop.
+- **MCP Registry lists the npm package.** `server.json` has a second
+  package (`registryType` `npm`, `action1-mcp-server`, stdio, the same
+  environment variables as the bundle), and `package.json` carries
+  `mcpName` `io.github.mguttmann/action1-mcp`, which the registry checks
+  against the server name. In `release.yml` the `mcp-registry` job now
+  runs after `npm-publish` (a skipped publish does not block it). The
+  `mcp-registry.yml` workflow sets the version of both packages, waits
+  for npm after a publish in the same run, and drops the npm entry when
+  npm does not serve the version with the right `mcpName` (publishing
+  off, or versions before 0.6.1); its GitHub token is now set on the
+  download step only.
 - **MCP Registry listing.** `server.json` describes the server for the
   official MCP Registry as `io.github.mguttmann/action1-mcp`, with the
   MCPB release asset (download URL and SHA-256) as its package. The new
@@ -21,6 +44,19 @@ first in each release.
   `mcp-publisher` pinned by version and SHA-256.
 - **Glama listing.** `glama.json` names `mguttmann` as maintainer, so
   the owner can claim the listing on glama.ai.
+
+### Documentation
+
+- README, `docs/INSTALLATION.md` (new Option C: npm), FAQ, DEPLOYMENT,
+  SECURITY, `mcpb/README.md` and the agent setup guide `CLAUDE.md` no
+  longer say the package is unpublished: they name the npm package, the
+  `npx` command for Claude Code and a generic stdio JSON configuration,
+  and warn to install only the exact name `action1-mcp-server`.
+  Credentials still go only into the MCPB wizard or the user's own
+  shell or configuration, never into a chat.
+- `docs/maintainers/repo-settings.md`: state of npm publishing (first
+  publish by hand, trusted publisher configured, validated by the first
+  workflow publish) and the npm entry of the registry listing.
 
 ## [0.6.0] - 2026-10-26
 
@@ -491,6 +527,7 @@ those versions built up:
 - graceful shutdown, `Retry-After` and token-lifetime clamps, and the
   `ACTION1_LAST_SEEN_STALE_MINUTES` and `TRUST_PROXY` settings.
 
-[Unreleased]: https://github.com/mguttmann/action1-mcp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/mguttmann/action1-mcp/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/mguttmann/action1-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/mguttmann/action1-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.5.0

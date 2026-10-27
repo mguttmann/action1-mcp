@@ -47,6 +47,20 @@ hostname / user: `action1_search_endpoints query="<substring>"`.
 
 ### How do I connect to Claude Code?
 
+From npm, no clone needed (type the values in your shell, never into a
+chat):
+
+```bash
+claude mcp add action1 \
+  -e ACTION1_BASE_URL=https://app.eu.action1.com/api/3.0 \
+  -e ACTION1_ORG_ID=<your-org-uuid> \
+  -e ACTION1_CLIENT_ID=<client-id> \
+  -e ACTION1_CLIENT_SECRET=<client-secret> \
+  -- npx -y action1-mcp-server
+```
+
+From a source build:
+
 ```bash
 claude mcp add action1 -- node \
   --env-file=/abs/path/.env /abs/path/dist/index.js
@@ -88,9 +102,16 @@ See [`DEPLOYMENT.md § Reverse proxy`](DEPLOYMENT.md#reverse-proxy-with-tls-cadd
 
 ### Does it work with Cursor / Continue.dev / Cody?
 
-Yes, all stdio MCP-compliant clients work. Same command:
-`node --env-file=/abs/.env /abs/dist/index.js`.
-[`INSTALLATION.md § Cursor`](INSTALLATION.md#cursor) has the snippet.
+Yes, all stdio MCP-compliant clients work: `npx -y action1-mcp-server`
+with the settings in the host's `env` block, or
+`node --env-file=/abs/.env /abs/dist/index.js` for a source build.
+[`INSTALLATION.md`](INSTALLATION.md#continuedev--cody--generic-stdio-clients)
+has the JSON snippet.
+
+### Is the npm package `action1-mcp-server` this project?
+
+Yes. It is published from this repository; its command is `action1-mcp`.
+Install only that exact name: similarly named packages are other code.
 
 ### Can I run it without installing Node.js?
 
@@ -231,9 +252,9 @@ Releases are cut by the maintainer:
 
 1. `npm version X.Y.Z --no-git-tag-version` (updates `package.json` and
    `package-lock.json`) and the same version in `mcpb/manifest.json` and
-   `server.json` (`version`, `packages[0].version` and the version in
-   `packages[0].identifier`; the `mcp-registry` workflow sets
-   `fileSha256` from the release). The server reads its version from
+   `server.json` (`version`, the `version` of both packages and the
+   version in the MCPB package's `identifier`; the `mcp-registry`
+   workflow sets `fileSha256` from the release). The server reads its version from
    `package.json`; `tests/unit/serverContract.test.ts` and
    `tests/unit/releaseChain.test.ts` fail if the manifest or
    `server.json` differs.
@@ -248,8 +269,9 @@ Releases are cut by the maintainer:
    Release with these assets and `SHA256SUMS` (an existing release is
    never overwritten). For a stable version it then lists the bundle in
    the official MCP Registry (`mcp-registry.yml`). Its npm publish job
-   stays off until the repository variable `NPM_PUBLISH_ENABLED` is
-   `true`. The repository settings it relies on are in
+   runs when the repository variable `NPM_PUBLISH_ENABLED` is `true`;
+   the registry job runs after it and lists the npm package only when
+   npm serves that version. The repository settings it relies on are in
    [`maintainers/repo-settings.md`](maintainers/repo-settings.md).
 
 ## Troubleshooting
