@@ -188,8 +188,9 @@ and no secret is needed:
   against the server name. The workflow keeps the npm entry only when
   npm serves the version with that `mcpName`; after a publish in the
   same run (`npm-published: true`) it waits for npm and fails if the
-  version does not appear. Versions before 0.6.1 have no `mcpName` on
-  npm, so a hand-started run for them lists the bundle only.
+  version does not appear. Only versions from 0.6.2 on carry `mcpName` on
+  npm (0.6.0 has none, 0.6.1 was never published there), so a
+  hand-started run for older tags lists the bundle only.
 - The MCPB asset must stay publicly downloadable: the registry checks
   the URL (GitHub release asset, `mcp` in the URL) when publishing.
 - `mcp-publisher` is pinned by version and SHA-256 in the workflow

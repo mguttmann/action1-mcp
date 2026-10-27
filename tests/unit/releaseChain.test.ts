@@ -136,6 +136,8 @@ describe("release.yml", () => {
     const run = runLines(job);
     expect(run.filter((l) => /\bnpm (ci|install|i)\b/.test(l))).toEqual([]);
     expect(run.some((l) => /npm publish .*\.tgz/.test(l))).toBe(true);
+    // A bare "dir/file.tgz" is read by npm as a GitHub "owner/repo" shorthand.
+    expect(run.some((l) => /npm publish \.\/\S+\.tgz/.test(l))).toBe(true);
     expect(job).toContain("sha256sum --check");
   });
 });

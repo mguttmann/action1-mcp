@@ -79,7 +79,7 @@ see [Claude Code](#claude-code-cli) and
 [generic stdio clients](#continuedev--cody--generic-stdio-clients). Steps
 2 and 3 below are for the source install.
 
-From 0.6.1 on, releases published to npm are also listed in the official
+From 0.6.2 on, releases published to npm are also listed in the official
 [MCP Registry](https://registry.modelcontextprotocol.io) as
 `io.github.mguttmann/action1-mcp`, next to the MCPB bundle. Hosts that
 install from the registry ask for the same environment variables.

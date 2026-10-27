@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/mguttmann/action1-mcp#readme",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/mguttmann/action1-mcp/releases/download/v0.6.1/action1-mcp-0.6.1.mcpb",
-      "version": "0.6.1",
+      "identifier": "https://github.com/mguttmann/action1-mcp/releases/download/v0.6.2/action1-mcp-0.6.2.mcpb",
+      "version": "0.6.2",
       "fileSha256": "49a673149bb9815e1121cd6404160312092dc6309b9328487962606b01f4a423",
       "transport": {
         "type": "stdio"
@@ -65,7 +65,7 @@
     {
       "registryType": "npm",
       "identifier": "action1-mcp-server",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

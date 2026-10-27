@@ -113,7 +113,7 @@ troubleshooting: [`docs/INSTALLATION.md`](docs/INSTALLATION.md#claude-desktop-ma
 The release workflow lists each stable release in the official
 [MCP Registry](https://registry.modelcontextprotocol.io) as
 `io.github.mguttmann/action1-mcp`: the bundle (download URL and SHA-256
-of the release asset) and, from 0.6.1 on, the npm package
+of the release asset) and, from 0.6.2 on, the npm package
 `action1-mcp-server`, both with the same environment variables. MCP hosts and
 directories that read the registry can install it from there. Only that
 name is this project; Action1 servers under other namespaces are

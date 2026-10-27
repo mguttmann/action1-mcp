@@ -189,7 +189,7 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then tag=next; fi
           # Trusted publishing (OIDC) needs no token and attaches
           # provenance.
-          npm publish release/action1-mcp-server-*.tgz --provenance --access public --tag "$tag"
+          npm publish ./release/action1-mcp-server-*.tgz --provenance --access public --tag "$tag"
 
   mcp-registry:
     needs: [verify, github-release, npm-publish]

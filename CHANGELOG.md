@@ -8,10 +8,25 @@ first in each release.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-27
+
+Release-pipeline fix. No change to tools, settings or behaviour.
+
+### Fixed
+
+- **npm publishing from the release workflow.** `release.yml` passed the
+  tarball as `release/action1-mcp-server-*.tgz`, which npm reads as a
+  GitHub `owner/repo` shorthand, so the 0.6.1 publish failed and 0.6.1
+  exists only as a GitHub release (bundle and tarball), not on npm or in
+  the MCP Registry. The path is now `./release/...`, and a test holds the
+  `./` prefix. 0.6.2 is the first version published by the workflow with
+  provenance.
+
 ## [0.6.1] - 2026-10-27
 
-Distribution release: the server is installable from npm and listed in
-the MCP Registry. No change to tools, settings or behaviour.
+Distribution release: prepares npm distribution and the MCP Registry
+listing. No change to tools, settings or behaviour. Its workflow publish
+to npm failed, so 0.6.1 is a GitHub release only; see 0.6.2.
 
 ### Added
 
@@ -527,7 +542,8 @@ those versions built up:
 - graceful shutdown, `Retry-After` and token-lifetime clamps, and the
   `ACTION1_LAST_SEEN_STALE_MINUTES` and `TRUST_PROXY` settings.
 
-[Unreleased]: https://github.com/mguttmann/action1-mcp/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/mguttmann/action1-mcp/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/mguttmann/action1-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/mguttmann/action1-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/mguttmann/action1-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/mguttmann/action1-mcp/releases/tag/v0.5.0
